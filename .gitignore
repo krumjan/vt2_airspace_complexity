@@ -54,6 +54,7 @@ coverage.xml
 # Translations
 *.mo
 *.pot
+*.parquet
 
 # Django stuff:
 *.log
@@ -127,3 +128,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
