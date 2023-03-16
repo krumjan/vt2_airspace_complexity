@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "vt2-env"
+version = "0.1.0"
+description = "env for vt2_airspace complexity"
+authors = ["Jan <krum@zhaw.ch>"]
+readme = "README.md"
+packages = [{include = "vt2_env"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+traffic = "^2.8.1"
+pandas = "^1.5.3"
+numpy = "^1.24.2"
+seaborn = "^0.12.2"
+tensorflow = "^2.11.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
