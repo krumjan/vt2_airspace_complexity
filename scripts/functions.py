@@ -14,6 +14,7 @@ from typing import Union, Tuple
 from shapely.geometry.base import BaseGeometry
 from traffic.core import Traffic
 import pandas as pd
+import traffic
 
 # Data fetching ------------------------------------------------------------------------------------
 def combine_adsb(path_raw: str, path_combined: str):
@@ -130,8 +131,8 @@ def download_adsb_para(
     # create list of dates between start and stop
     dates = pd.date_range(start, stop, freq="D", tz="UTC")
     # create folder if it does not exist
-    if not os.path.exists("data/rectangle_1/2022/raw"):
-        os.makedirs("data/rectangle_1/2022/raw")
+    if not os.path.exists(folder):
+        os.makedirs(folder)
     # create list of arguments for the download_adsb function
     t0 = dates[:-1]
     tf = dates[1:]
@@ -242,6 +243,58 @@ def vertice_boundary(corner: tuple, width: float, height: float) -> list:
     lat_lr, lon_lr = new_pos_dist((lat_ll, lon_ll), width, 90)
 
     return [(lat_ul, lon_ul), (lat_ur, lon_ur), (lat_ll, lon_ll), (lat_lr, lon_lr)]
+
+# Reduction to low traffic trajectories------------------------------------------------------------
+def get_lowtraf_trajs(trajs: traffic.core.traffic.Traffic,
+                      max_percentile: float = 0.99,
+                      low_th: float = 0.2,
+                      max_workers: int = 20,
+                      resampling: str = '5s') -> traffic.core.traffic.Traffic:
+    """_summary_
+
+    Parameters
+    ----------
+    trajs : traffic.core.traffic.Traffic
+        _description_
+    max_percentile : float, optional
+        _description_, by default 0.99
+    low_th : float, optional
+        _description_, by default 0.2
+    max_workers : int, optional
+        Max amount of workers for multi-processing of resampling and id assignment, 
+        by default 20
+    resampling : str, optional
+        Resampling interval applied to the trajectories, by default '5s'
+
+    Returns
+    -------
+    traffic.core.traffic.Traffic
+        A traffic object containing only the trajectories that crossed the volume during
+        hours with low traffic.
+    """
+    # Id assignment and resampling
+    trajs = trajs.assign_id().resample(resampling).eval(desc='processing', max_workers=max_workers)
+    # Aggregation on trajectory level, computation of stay time and hour entered
+    df = trajs.data.groupby('flight_id')['timestamp'].agg(['min', 'max']).reset_index()
+    df = df.rename({'min': 'in', 'max': 'out'}, axis=1)
+    df['stay_s'] = (df['out'] - df['in']).dt.total_seconds()
+    df['timestamp_entered_h'] = df['in'].dt.floor('h')
+    df = df.drop(['in','out'], axis=1)
+    # Aggreagation on hourly level
+    hourly_time = df.groupby(['timestamp_entered_h'])['stay_s'].sum()
+    hourly_count = df.groupby(['timestamp_entered_h'])['flight_id'].count()
+    hourly_df = pd.concat([hourly_time, hourly_count], axis=1)
+    hourly_df = hourly_df.rename({'flight_id': 'count'}, axis=1)
+    # Rescaling and identification of hours below threshold
+    hourly_df= hourly_df/hourly_df.quantile(max_percentile)
+    hourly_df['low'] = hourly_df['stay_s'].apply(lambda x: 'yes' if x < low_th and x >= 0 else 'no')
+    low_hours = hourly_df[hourly_df.low == 'yes'].index
+    # Reduction of trajectories to low traffic hours
+    ids_use = df[df.timestamp_entered_h.isin(low_hours)].flight_id.to_numpy()
+    trajs_use = trajs[ids_use]
+
+    # return(trajs_use)
+    return(trajs_use)
 
 # Visualisation-------------------------------------------------------------------------------------
 def generate_color_list(num_colors):
