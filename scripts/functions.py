@@ -17,7 +17,7 @@ import pandas as pd
 import traffic
 
 # Data fetching ------------------------------------------------------------------------------------
-def combine_adsb(path_raw: str, path_combined: str):
+def combine_adsb(path_raw: str, path_combined: str) -> None:
     """
     Combines all parquet files in the path provided in "path_raw" into one parquet file and saves it
     in the "path_combined" folder.
@@ -48,7 +48,7 @@ def download_adsb(
     area: Union[None, str, BaseGeometry, Tuple[float, float, float, float]],
     lower: float,
     upper: float,
-):
+) -> None:
     """
     Queries ADS-B data from Opensky Network for the given time interval, geographical footprint,
     altitude constraints and saves the data as Traffic in a parquet file format.
@@ -97,7 +97,7 @@ def download_adsb_para(
     lower: float,
     upper: float,
     max_process: int = 8,
-):
+) -> None:
     """
     Parllelisation of the download_adsb function. Queries ADS-B data from Opensky Network for the
     given time interval, geographical footprint, altitude constraints and saves the data as Traffic
@@ -246,8 +246,12 @@ def get_lowtraf_trajs(file_load: str,
                       max_percentile: float = 0.99,
                       low_th: float = 0.2,
                       max_workers: int = 20,
-                      resampling: str = '5s') -> traffic.core.traffic.Traffic:
-    """_summary_
+                      resampling: str = '5s') -> None:
+    """
+    Computes hours of low traffic and reduces the trajectories to these hours. The hours of low
+    traffic are defined as the hours with a traffic volume below a threshold which is defined as a
+    fraction of the maximum traffic volume. The maximum traffic volume is defined as a percentile
+    of flown seconds per hour.
 
     Parameters
     ----------
@@ -294,8 +298,92 @@ def get_lowtraf_trajs(file_load: str,
         os.mkdir(path_save)
     # save the Traffic object as a parquet file
     trajs_use.to_parquet(f'{path_save}/low_traffic.parquet')
-    # trajs_use.to_parquet(f"{path_save}/combined.parquet")
-    # return trajs_use
+
+# Restructuring to training data--------------------------------------------------------------------
+
+def get_training_data(file_load: str,
+                        path_save: str,
+                        max_workers: int = 20) -> None:
+    """
+    Restructures the trajectories to training data. The trajectories are resampled to 100 data
+    points per trajectory. The data points are interpolated linearly and the resulting trajectories
+    are converted to numpy arrays min-max rescaling is applied. The resulting numpy arrays
+    (normalized and non-normalized) are saved along with a txt file containing the min and max
+    values used for the normalization.
+
+    Parameters
+    ----------
+    file_load : str
+        Path to the traffic file which will be loaded
+    path_save : str
+        Path to the folder where the created files will be saved
+    max_workers : int, optional
+        Max amount of workers for multi-processing of resampling, by default 20
+    """
+    
+    # Load data
+    trajs = Traffic.from_file(file_load)
+
+    # Resample to 100 data points per trajectory
+    trajs = trajs.resample(100).eval(max_workers=max_workers)
+
+    # Convert to numpy array
+    X = []
+    for flight in tqdm(trajs):
+        df = flight.data[['latitude', 'longitude', 'altitude']]
+        df = df.interpolate(method='linear', limit_direction='both').ffill().bfill()
+        df_as_np = df.to_numpy()
+        X.append(df_as_np)
+    X = np.array(X)
+
+    # Remove potential NaNs
+    indexList_X_nan = [np.any(i) for i in np.isnan(X)]
+    X = np.delete(X, indexList_X_nan, axis=0)
+    X.shape
+
+    # Min-Max Normalization
+    lat_max = np.max(X[:,:,0])
+    lat_min = np.min(X[:,:,0])
+    lon_max = np.max(X[:,:,1])
+    lon_min = np.min(X[:,:,1])
+    alt_max = np.max(X[:,:,2])
+    alt_min = np.min(X[:,:,2])
+    X_norm = X.copy() 
+    X_norm[:,:,0] = (X_norm[:,:,0] - lat_min) / (lat_max - lat_min)
+    X_norm[:,:,1] = (X_norm[:,:,1] - lon_min) / (lon_max - lon_min)
+    X_norm[:,:,2] = (X_norm[:,:,2] - alt_min) / (alt_max - alt_min)
+
+    if not os.path.exists(path_save):
+        os.makedirs(path_save)
+    np.save(f'{path_save}/X', X)
+    np.save(f'{path_save}/X_norm', X_norm)
+    with open(f"{path_save}/normalisation.txt", "w") as f:
+        f.write(
+            'lat_min'
+            + " "
+            + 'lat_max'
+            + " "
+            + 'lon_min'
+            + " "
+            + 'lon_max'
+            + " "
+            + 'alt_min'
+            + " "
+            + 'alt_max'
+            + f'\n{lat_min}'
+            + " "
+            + str(lat_max)
+            + " "
+            + str(lon_min)
+            + " "
+            + str(lon_max)
+            + " "
+            + str(alt_min)
+            + " "
+            + str(alt_max)
+        )
+
+
 
 # Visualisation-------------------------------------------------------------------------------------
 def generate_color_list(num_colors):
