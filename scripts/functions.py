@@ -39,9 +39,7 @@ def combine_adsb(path_raw: str, path_combined: str):
     if os.path.isdir(path_combined) == False:
         os.mkdir(path_combined)
     # save the Traffic object as a parquet file
-    alldata.to_parquet(
-        f"{path_combined}/combined.parquet", use_deprecated_int96_timestamps=True
-    )
+    alldata.to_parquet(f"{path_combined}/combined.parquet")
     
 def download_adsb(
     t0: str,
@@ -72,8 +70,7 @@ def download_adsb(
         Upper altitude constraint in feet
     """
     # check whether file already exists
-    check_file = Path(f"{folder}/{t0.date()}_{tf.date()}.parquet",
-                      use_deprecated_int96_timestamps=True)
+    check_file = Path(f"{folder}/{t0.date()}_{tf.date()}.parquet")
     # if not, print which day is being downloaded and download
     if check_file.is_file() == False:
         print(f"Downloading {t0.date()}...")
@@ -90,8 +87,7 @@ def download_adsb(
         if traffic_data is None:
             print("empty day")
         else:
-            traffic_data.to_parquet(f"{folder}/{t0.date()}_{tf.date()}.parquet",
-                                    use_deprecated_int96_timestamps=True)
+            traffic_data.to_parquet(f"{folder}/{t0.date()}_{tf.date()}.parquet")
                 
 def download_adsb_para(
     start: str,
@@ -191,7 +187,7 @@ def new_pos_dist(pos: tuple, dist: float, bear: float) -> tuple:
     # return new position in degrees
     return (np.degrees(lat2), np.degrees(lon2))
 
-def side_boundary(corner: tuple, width: float, height: float) -> list:
+def side_boundary(corner: tuple, width: float = 20, height: float = 20) -> list:
     """
     Computes the coordinates of the sides of a rectangle given the coordinates of the upper left
     corner, the width and the height of the rectangle.
@@ -245,7 +241,8 @@ def vertice_boundary(corner: tuple, width: float, height: float) -> list:
     return [(lat_ul, lon_ul), (lat_ur, lon_ur), (lat_ll, lon_ll), (lat_lr, lon_lr)]
 
 # Reduction to low traffic trajectories------------------------------------------------------------
-def get_lowtraf_trajs(trajs: traffic.core.traffic.Traffic,
+def get_lowtraf_trajs(file_load: str,
+                      path_save: str,
                       max_percentile: float = 0.99,
                       low_th: float = 0.2,
                       max_workers: int = 20,
@@ -254,28 +251,28 @@ def get_lowtraf_trajs(trajs: traffic.core.traffic.Traffic,
 
     Parameters
     ----------
-    trajs : traffic.core.traffic.Traffic
-        _description_
+    file_load : str
+        Path to the traffic file which will be loaded
+    path_save : str
+        Path to the folder where the low traffic trajectories will be saved
     max_percentile : float, optional
-        _description_, by default 0.99
+        Percentile which is defined as max traffic, by default 0.99
     low_th : float, optional
-        _description_, by default 0.2
+        Threshold expressed as a fraction of max traffic below which an hour will be labeled as low
+        traffic-hour, by default 0.2
     max_workers : int, optional
         Max amount of workers for multi-processing of resampling and id assignment, 
         by default 20
     resampling : str, optional
         Resampling interval applied to the trajectories, by default '5s'
-
-    Returns
-    -------
-    traffic.core.traffic.Traffic
-        A traffic object containing only the trajectories that crossed the volume during
-        hours with low traffic.
     """
+    # Load data
+    trajs = Traffic.from_file(file_load)
     # Id assignment and resampling
-    trajs = trajs.assign_id().resample(resampling).eval(desc='processing', max_workers=max_workers)
+    trajs = trajs.assign_id().eval()
     # Aggregation on trajectory level, computation of stay time and hour entered
-    df = trajs.data.groupby('flight_id')['timestamp'].agg(['min', 'max']).reset_index()
+    df = trajs.resample(resampling).eval(desc='processing', max_workers=max_workers).data
+    df = df.groupby('flight_id')['timestamp'].agg(['min', 'max']).reset_index()
     df = df.rename({'min': 'in', 'max': 'out'}, axis=1)
     df['stay_s'] = (df['out'] - df['in']).dt.total_seconds()
     df['timestamp_entered_h'] = df['in'].dt.floor('h')
@@ -292,9 +289,13 @@ def get_lowtraf_trajs(trajs: traffic.core.traffic.Traffic,
     # Reduction of trajectories to low traffic hours
     ids_use = df[df.timestamp_entered_h.isin(low_hours)].flight_id.to_numpy()
     trajs_use = trajs[ids_use]
-
-    # return(trajs_use)
-    return(trajs_use)
+    # create path_save if it does not exist
+    if os.path.isdir(path_save) == False:
+        os.mkdir(path_save)
+    # save the Traffic object as a parquet file
+    trajs_use.to_parquet(f'{path_save}/low_traffic.parquet')
+    # trajs_use.to_parquet(f"{path_save}/combined.parquet")
+    # return trajs_use
 
 # Visualisation-------------------------------------------------------------------------------------
 def generate_color_list(num_colors):
