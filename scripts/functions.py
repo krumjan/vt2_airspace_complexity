@@ -1,12 +1,9 @@
-import time
-
 import multiprocessing as mp
 import glob
 from pathlib import Path
 import os
 from tqdm.auto import tqdm
 from traffic.data import opensky
-from traffic.data import nm_airspaces
 import numpy as np
 import random
 import colorsys
@@ -14,7 +11,6 @@ from typing import Union, Tuple
 from shapely.geometry.base import BaseGeometry
 from traffic.core import Traffic
 import pandas as pd
-import traffic
 
 # Data fetching ------------------------------------------------------------------------------------
 def combine_adsb(path_raw: str, path_combined: str) -> None:
@@ -168,14 +164,19 @@ def new_pos_dist(pos: tuple, dist: float, bear: float) -> tuple:
     # conversion to radians
     lat = np.radians(pos[0])
     lon = np.radians(pos[1])
+
     # earth circumference
     R = 6371e3
+
     # dist nm -> m
     dist_m = dist * 1852
+
     # angular distance
     ang_d = dist_m / R
+
     # conversion to radians
     brng = np.radians(bear)
+
     # combutation of new position with haversine formula
     lat2 = np.arcsin(
         np.sin(lat) * np.cos(ang_d) + np.cos(lat) * np.sin(ang_d) * np.cos(brng)
@@ -184,6 +185,7 @@ def new_pos_dist(pos: tuple, dist: float, bear: float) -> tuple:
         np.sin(brng) * np.sin(ang_d) * np.cos(lat),
         np.cos(ang_d) - np.sin(lat) * np.sin(lat2),
     )
+
     # return new position in degrees
     return (np.degrees(lat2), np.degrees(lon2))
 
