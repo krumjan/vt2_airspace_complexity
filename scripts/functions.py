@@ -1,22 +1,26 @@
-import multiprocessing as mp
 import glob
-from pathlib import Path
+import math
+import multiprocessing as mp
 import os
-from tqdm.auto import tqdm
-from traffic.data import opensky
-import numpy as np
-import random
-import colorsys
-from typing import Union, Tuple
-from shapely.geometry.base import BaseGeometry
-from traffic.core import Traffic
 import pandas as pd
 
-# Data fetching ------------------------------------------------------------------------------------
-def combine_adsb(path_raw: str, path_combined: str) -> None:
+from pathlib import Path
+from shapely.geometry.base import BaseGeometry
+
+from tqdm.auto import tqdm
+from traffic.core import Traffic
+from traffic.data import opensky
+from typing import Union, Tuple
+
+# Data fetching ------------------------------------------------------------------------
+def combine_adsb(
+    path_raw: str,
+    path_combined: str
+) -> None:
     """
-    Combines all parquet files in the path provided in "path_raw" into one parquet file and saves it
-    in the "path_combined" folder.
+    Combines all parquet files in each folder in the provided path "path_raw" into
+    one parquet file and saves it in the "path_combined" folder. Data is treated by
+    year and month.
 
     Parameters
     ----------
@@ -25,17 +29,22 @@ def combine_adsb(path_raw: str, path_combined: str) -> None:
     path_combined : str
         Folder path where the combined parquet file will be stored
     """
-    # list all parquet files in the raw folder
-    files = glob.glob(f"{path_raw}/*.parquet")
-    # concatenate all files into one Traffic object
-    alldata = Traffic(
-        pd.concat([Traffic.from_file(file).data for file in files], ignore_index=True)
-    )
-    # create "combined" folder if it does not exist
-    if os.path.isdir(path_combined) == False:
+    # create combined folder if it does not exist
+    if os.path.isdir(path_combined) is False:
         os.mkdir(path_combined)
-    # save the Traffic object as a parquet file
-    alldata.to_parquet(f"{path_combined}/combined.parquet")
+    # for each year and month folder
+    folders = glob.glob(f"{path_raw}/*/", recursive = True)
+    for folder in tqdm(folders):
+        # read all parquet files in the folder and combine them into one Traffic object
+        files = glob.glob(f"{folder}/*.parquet", recursive=True)
+        alldata = Traffic(
+            pd.concat([Traffic.from_file(file).data for file in files],
+                      ignore_index=True)
+        )
+        # save combined file in the combined folder with the year and month in the name
+        year = folder.split('/')[3].split('_')[0]
+        month = folder.split('/')[3].split('_')[1]
+        alldata.to_parquet(f"{path_combined}/combined_{year}_{month}.parquet")
     
 def download_adsb(
     t0: str,
@@ -46,8 +55,8 @@ def download_adsb(
     upper: float,
 ) -> None:
     """
-    Queries ADS-B data from Opensky Network for the given time interval, geographical footprint,
-    altitude constraints and saves the data as Traffic in a parquet file format.
+    Queries ADS-B data from Opensky Network for the given time interval, geographical
+    footprint and altitude constraints and saves the data as parquetet traffic object.
 
     Parameters
     ----------
@@ -58,17 +67,20 @@ def download_adsb(
     folder : str
         Path to the folder where the data will be saved
     area : Union[None, str, BaseGeometry, Tuple[float, float, float, float]]
-        Geographical footprint. Can be a string (e.g. "LFBB"), a shapely geometry or a tuple of
-        floats (lon_west, lat_south, lon_east, lat_north)
+        Geographical footprint. Can be a string (e.g. "LFBB"), a shapely geometry or a
+        tuple of floats (lon_west, lat_south, lon_east, lat_north)
     lower : float
         Lower altitude constraint in feet
     upper : float
         Upper altitude constraint in feet
     """
     # check whether file already exists
-    check_file = Path(f"{folder}/{t0.date()}_{tf.date()}.parquet")
+    year = t0.year
+    month = t0.month
+    path = f"{folder}/{year}_{month}"
+    check_file = Path(f"{path}/{t0.date()}_{tf.date()}.parquet")
     # if not, print which day is being downloaded and download
-    if check_file.is_file() == False:
+    if check_file.is_file() is False:
         print(f"Downloading {t0.date()}...")
         traffic_data = opensky.history(
             t0,
@@ -83,7 +95,9 @@ def download_adsb(
         if traffic_data is None:
             print("empty day")
         else:
-            traffic_data.to_parquet(f"{folder}/{t0.date()}_{tf.date()}.parquet")
+            if not os.path.exists(path):
+                os.makedirs(path)
+            traffic_data.to_parquet(f"{path}/{t0.date()}_{tf.date()}.parquet")
                 
 def download_adsb_para(
     start: str,
@@ -95,9 +109,9 @@ def download_adsb_para(
     max_process: int = 8,
 ) -> None:
     """
-    Parllelisation of the download_adsb function. Queries ADS-B data from Opensky Network for the
-    given time interval, geographical footprint, altitude constraints and saves the data as Traffic
-    in a parquet file format one day at a time.
+    Parllelisation of the download_adsb function. Queries ADS-B data from Opensky
+    Network for the given time interval, geographical footprint, altitude constraints
+    and saves the data as Traffic in a parquet file format one day at a time.
 
     Parameters
     ----------
@@ -108,8 +122,8 @@ def download_adsb_para(
     folder : str
         Path to the folder where the data will be saved as one parquet file per day
     bounds : Union[None, str, BaseGeometry, Tuple[float, float, float, float]]
-        Geographical footprint. Can be a string (e.g. "LFBB"), a shapely geometry or a tuple of
-        floats (lon_west, lat_south, lon_east, lat_north)
+        Geographical footprint. Can be a string (e.g. "LFBB"), a shapely geometry or a
+        tuple of floats (lon_west, lat_south, lon_east, lat_north)
     lower : float
         Lower altitude constraint in feet
     upper : float
@@ -122,9 +136,6 @@ def download_adsb_para(
     upper_m = upper * 0.3048
     # create list of dates between start and stop
     dates = pd.date_range(start, stop, freq="D", tz="UTC")
-    # create folder if it does not exist
-    if not os.path.exists(folder):
-        os.makedirs(folder)
     # create list of arguments for the download_adsb function
     t0 = dates[:-1]
     tf = dates[1:]
@@ -142,263 +153,53 @@ def download_adsb_para(
     with mp.Pool(max_process) as pool:
         pool.starmap(download_adsb, t)
 
-def new_pos_dist(pos: tuple, dist: float, bear: float) -> tuple:
+def new_pos_dist(
+    pos: Tuple[float, float],
+    distance: float,
+    direction: float
+) -> Tuple[float, float]:
     """
-    Computes the new position (latitude, longitude), given an origin (latitude, longitude),
-    a distance (nautical miles) and a bearing (° -> direction of displacement) using the
-    haversine formula.
+    Calculates the new position given an initial position, a distance and a direction.
+
     Parameters
     ----------
-    pos : tuple
-        Current position in decimal degree format (latitude, longitude)
-    dist : float
-        Distance of displacement in nautical miles
-    bear : float
-        Bearing of displacement in °
+    pos : Tuple[float, float]
+        Initial position (latitude, longitude)
+    distance : float
+        Distance in nautical miles
+    direction : float
+        Direction/bearing in degrees
+
     Returns
     -------
-    tuple
-        New position in decimal degrees computed from initial position, distance and bearing
-        (latitude, longitude)
+    Tuple[float, float]
+        New position (latitude, longitude)
     """
-    # conversion to radians
-    lat = np.radians(pos[0])
-    lon = np.radians(pos[1])
+    # Convert latitude and longitude to radians
+    lat = pos[0]
+    lon = pos[1]
+    lat_rad = math.radians(lat)
+    lon_rad = math.radians(lon)
 
-    # earth circumference
-    R = 6371e3
+    # Convert nautical miles to meters
+    dist_meters = distance * 1852.0
 
-    # dist nm -> m
-    dist_m = dist * 1852
+    # Convert direction to radians
+    dir_rad = math.radians(direction)
 
-    # angular distance
-    ang_d = dist_m / R
+    # Calculate new latitude and longitude
+    new_lat_rad = math.asin(math.sin(lat_rad) * math.cos(dist_meters/6378137.0) +
+                            math.cos(lat_rad) * math.sin(dist_meters/6378137.0) *
+                            math.cos(dir_rad))
+    new_lon_rad = lon_rad + math.atan2(math.sin(dir_rad) *
+                                       math.sin(dist_meters/6378137.0) *
+                                       math.cos(lat_rad),
+                                       math.cos(dist_meters/6378137.0) -
+                                       math.sin(lat_rad) * math.sin(new_lat_rad))
 
-    # conversion to radians
-    brng = np.radians(bear)
+    # Convert new latitude and longitude to degrees
+    new_lat = math.degrees(new_lat_rad)
+    new_lon = math.degrees(new_lon_rad)
 
-    # combutation of new position with haversine formula
-    lat2 = np.arcsin(
-        np.sin(lat) * np.cos(ang_d) + np.cos(lat) * np.sin(ang_d) * np.cos(brng)
-    )
-    lon2 = lon + np.arctan2(
-        np.sin(brng) * np.sin(ang_d) * np.cos(lat),
-        np.cos(ang_d) - np.sin(lat) * np.sin(lat2),
-    )
-
-    # return new position in degrees
-    return (np.degrees(lat2), np.degrees(lon2))
-
-def side_boundary(corner: tuple, width: float = 20, height: float = 20) -> list:
-    """
-    Computes the coordinates of the sides of a rectangle given the coordinates of the upper left
-    corner, the width and the height of the rectangle.
-    Parameters
-    ----------
-    corner : tuple
-        Coordinates of the upper left corner of the rectangle in decimal degree format
-        (latitude, longitude)
-    width : float
-        Width of the rectangled [nm]
-    height : float
-        Height of the rectangle [nm]
-    Returns
-    -------
-    list
-        Coordinates of the sides of the rectangle in decimal degree format (lon_west, lat_south,
-        lon_east, lat_north)
-    """
-    # Determine the coordinates of the sides of the rectangle and return them
-    left = corner[1]
-    right = new_pos_dist((corner[0], corner[1]), width, 90)[1]
-    top = corner[0]
-    bottom = new_pos_dist((corner[0], corner[1]), height, 180)[0]
-    return [left, bottom, right, top]
-
-def vertice_boundary(corner: tuple, width: float, height: float) -> list:
-    """
-    Computes the coordinates of the vertices of a rectangle given the coordinates of the upper left
-    corner, the width and the height of the rectangle.
-    Parameters
-    ----------
-    corner : tuple
-        Coordinates of the upper left corner of the rectangle in decimal degrees
-        (latitude, longitude)
-    width : float
-        Width of the rectangled [nm]
-    height : float
-        Height of the rectangle [nm]
-    Returns
-    -------
-    list
-        Coordinates of the vertices of the rectangle in decimal degrees (upper left, upper right,
-        lower left, lower right)
-    """
-    # ul = upper left, ur = upper right, ll = lower left, lr = lower right
-    lat_ul, lon_ul = corner[0], corner[1]
-    lat_ur, lon_ur = new_pos_dist((lat_ul, lon_ul), width, 90)
-    lat_ll, lon_ll = new_pos_dist((lat_ul, lon_ul), height, 180)
-    lat_lr, lon_lr = new_pos_dist((lat_ll, lon_ll), width, 90)
-
-    return [(lat_ul, lon_ul), (lat_ur, lon_ur), (lat_ll, lon_ll), (lat_lr, lon_lr)]
-
-# Reduction to low traffic trajectories------------------------------------------------------------
-def get_lowtraf_trajs(file_load: str,
-                      path_save: str,
-                      max_percentile: float = 0.99,
-                      low_th: float = 0.2,
-                      max_workers: int = 20,
-                      resampling: str = '5s') -> None:
-    """
-    Computes hours of low traffic and reduces the trajectories to these hours. The hours of low
-    traffic are defined as the hours with a traffic volume below a threshold which is defined as a
-    fraction of the maximum traffic volume. The maximum traffic volume is defined as a percentile
-    of flown seconds per hour.
-
-    Parameters
-    ----------
-    file_load : str
-        Path to the traffic file which will be loaded
-    path_save : str
-        Path to the folder where the low traffic trajectories will be saved
-    max_percentile : float, optional
-        Percentile which is defined as max traffic, by default 0.99
-    low_th : float, optional
-        Threshold expressed as a fraction of max traffic below which an hour will be labeled as low
-        traffic-hour, by default 0.2
-    max_workers : int, optional
-        Max amount of workers for multi-processing of resampling and id assignment, 
-        by default 20
-    resampling : str, optional
-        Resampling interval applied to the trajectories, by default '5s'
-    """
-    # Load data
-    trajs = Traffic.from_file(file_load)
-    # Id assignment and resampling
-    trajs = trajs.assign_id().eval()
-    # Aggregation on trajectory level, computation of stay time and hour entered
-    df = trajs.resample(resampling).eval(desc='processing', max_workers=max_workers).data
-    df = df.groupby('flight_id')['timestamp'].agg(['min', 'max']).reset_index()
-    df = df.rename({'min': 'in', 'max': 'out'}, axis=1)
-    df['stay_s'] = (df['out'] - df['in']).dt.total_seconds()
-    df['timestamp_entered_h'] = df['in'].dt.floor('h')
-    df = df.drop(['in','out'], axis=1)
-    # Aggreagation on hourly level
-    hourly_time = df.groupby(['timestamp_entered_h'])['stay_s'].sum()
-    hourly_count = df.groupby(['timestamp_entered_h'])['flight_id'].count()
-    hourly_df = pd.concat([hourly_time, hourly_count], axis=1)
-    hourly_df = hourly_df.rename({'flight_id': 'count'}, axis=1)
-    # Rescaling and identification of hours below threshold
-    hourly_df= hourly_df/hourly_df.quantile(max_percentile)
-    hourly_df['low'] = hourly_df['stay_s'].apply(lambda x: 'yes' if x < low_th and x >= 0 else 'no')
-    low_hours = hourly_df[hourly_df.low == 'yes'].index
-    # Reduction of trajectories to low traffic hours
-    ids_use = df[df.timestamp_entered_h.isin(low_hours)].flight_id.to_numpy()
-    trajs_use = trajs[ids_use]
-    # create path_save if it does not exist
-    if os.path.isdir(path_save) == False:
-        os.mkdir(path_save)
-    # save the Traffic object as a parquet file
-    trajs_use.to_parquet(f'{path_save}/low_traffic.parquet')
-
-# Restructuring to training data--------------------------------------------------------------------
-
-def get_training_data(file_load: str,
-                        path_save: str,
-                        max_workers: int = 20) -> None:
-    """
-    Restructures the trajectories to training data. The trajectories are resampled to 100 data
-    points per trajectory. The data points are interpolated linearly and the resulting trajectories
-    are converted to numpy arrays min-max rescaling is applied. The resulting numpy arrays
-    (normalized and non-normalized) are saved along with a txt file containing the min and max
-    values used for the normalization.
-
-    Parameters
-    ----------
-    file_load : str
-        Path to the traffic file which will be loaded
-    path_save : str
-        Path to the folder where the created files will be saved
-    max_workers : int, optional
-        Max amount of workers for multi-processing of resampling, by default 20
-    """
-    
-    # Load data
-    trajs = Traffic.from_file(file_load)
-
-    # Resample to 100 data points per trajectory
-    trajs = trajs.resample(100).eval(max_workers=max_workers)
-
-    # Convert to numpy array
-    X = []
-    for flight in tqdm(trajs):
-        df = flight.data[['latitude', 'longitude', 'altitude']]
-        df = df.interpolate(method='linear', limit_direction='both').ffill().bfill()
-        df_as_np = df.to_numpy()
-        X.append(df_as_np)
-    X = np.array(X)
-
-    # Remove potential NaNs
-    indexList_X_nan = [np.any(i) for i in np.isnan(X)]
-    X = np.delete(X, indexList_X_nan, axis=0)
-    X.shape
-
-    # Min-Max Normalization
-    lat_max = np.max(X[:,:,0])
-    lat_min = np.min(X[:,:,0])
-    lon_max = np.max(X[:,:,1])
-    lon_min = np.min(X[:,:,1])
-    alt_max = np.max(X[:,:,2])
-    alt_min = np.min(X[:,:,2])
-    X_norm = X.copy() 
-    X_norm[:,:,0] = (X_norm[:,:,0] - lat_min) / (lat_max - lat_min)
-    X_norm[:,:,1] = (X_norm[:,:,1] - lon_min) / (lon_max - lon_min)
-    X_norm[:,:,2] = (X_norm[:,:,2] - alt_min) / (alt_max - alt_min)
-
-    if not os.path.exists(path_save):
-        os.makedirs(path_save)
-    np.save(f'{path_save}/X', X)
-    np.save(f'{path_save}/X_norm', X_norm)
-    with open(f"{path_save}/normalisation.txt", "w") as f:
-        f.write(
-            'lat_min'
-            + " "
-            + 'lat_max'
-            + " "
-            + 'lon_min'
-            + " "
-            + 'lon_max'
-            + " "
-            + 'alt_min'
-            + " "
-            + 'alt_max'
-            + f'\n{lat_min}'
-            + " "
-            + str(lat_max)
-            + " "
-            + str(lon_min)
-            + " "
-            + str(lon_max)
-            + " "
-            + str(alt_min)
-            + " "
-            + str(alt_max)
-        )
-
-
-
-# Visualisation-------------------------------------------------------------------------------------
-def generate_color_list(num_colors):
-    # Generate a list of evenly spaced hues
-    hues = [i / float(num_colors) for i in range(num_colors)]
-
-    # Shuffle the list of hues
-    random.shuffle(hues)
-
-    # Convert the hues to RGB colors
-    colors = [tuple(int(i * 255) for i in colorsys.hsv_to_rgb(hue, 0.8, 0.8)) for hue in hues]
-
-    # Convert the RGB colors to hex strings
-    hex_colors = [f"#{r:02x}{g:02x}{b:02x}" for r, g, b in colors]
-
-    return hex_colors
+    # Return new position
+    return new_lat, new_lon
