@@ -1,22 +1,25 @@
 [tool.poetry]
-name = "vt2-env"
+name = "vt2-airspace-complexity"
 version = "0.1.0"
-description = "env for vt2_airspace complexity"
+description = ""
 authors = ["Jan <krum@zhaw.ch>"]
 readme = "README.md"
-packages = [{include = "vt2_env"}]
+packages = [{include = "vt2_airspace_complexity"}]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = "^3.11"
 traffic = "^2.8.1"
-pandas = "^1.5.3"
-numpy = "^1.24.2"
+plotly = "^5.13.1"
+nbformat = "^5.8.0"
 seaborn = "^0.12.2"
-tensorflow = "^2.11.0"
-tensorflow-probability = "^0.19.0"
-keras = "^2.11.0"
 
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.0.254"
+black = "^23.1.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 79
