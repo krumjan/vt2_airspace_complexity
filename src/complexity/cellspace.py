@@ -2,10 +2,13 @@ import os
 import glob
 from pathlib import Path
 import math
+import multiprocessing as mp
+from functools import partial
 
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
+from multiprocessing import Pool
 import plotly.graph_objects as go
 
 from traffic.core import Traffic
@@ -174,7 +177,7 @@ class cellspace:
         print("Preprocessing data in monthly chuks...")
         util_adsb.preprocess_adsb(
             path_get=f"{home_path}/data/{self.id}/02_combined",
-            path_save=f"{home_path}/data/{self.id}/03_preprocessed/monthly",
+            path_save=f"{home_path}/data/{self.id}/03_preprocessed/monthly/",
         )
 
         # Combine preprocessed data to one file
@@ -371,6 +374,47 @@ class cellspace:
                     Traffic(celldata).to_parquet(
                         f"{home_path}/data/{self.id}/04_cells/{cell.id}.parquet"
                     )
+
+    # def assign_cell_traffic(self) -> None:
+    #     """
+    #     Assigns the trajectory data to the cells and saves the data as a individual
+    #     parquet files in the folder '04_cells'. The function requires the attribute
+    #     'cells' to exist. If it does not exist, an error is raised.
+    #     """
+
+    #     # Define home path
+    #     home_path = util_general.get_project_root()
+
+    #     # Create directory to save cell data if it does not exist
+    #     if not os.path.isdir(f"{home_path}/data/{self.id}/04_cells"):
+    #         os.mkdir(f"{home_path}/data/{self.id}/04_cells")
+
+    #     # Check if all cells have been assigned traffic, if so, skip
+    #     cell_ids = [cell.id for cell in self.cells]
+    #     file_names = os.listdir(f"{home_path}/data/{self.id}/04_cells")
+    #     if len(file_names) == len(cell_ids):
+    #         return
+
+    #     # Import traffic data
+    #     print("Importing data...")
+    #     alltrajs = Traffic.from_file(
+    #         f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all.parquet"
+    #     ).data
+
+    #     cell_para = self.cells
+    #     trajs_para = [alltrajs for i in range(len(self.cells))]
+    #     homes_para = [home_path for i in range(len(self.cells))]
+    #     t = [
+    #         (cell_para, trajs_para, homes_para)
+    #         for cell_para, trajs_para, homes_para in zip(
+    #             cell_para, trajs_para, homes_para
+    #         )
+    #     ]
+
+    #     # Assign traffic to cells
+    #     print("Assigning traffic to cells...")
+    #     with Pool(30) as pool:
+    #         pool.starmap(util_adsb.process_cell, t)
 
 
 class cell:

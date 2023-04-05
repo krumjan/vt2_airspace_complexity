@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 from traffic.core import Traffic
 from traffic.data import opensky
 from typing import Union, Tuple
+import utils.general as util_general
 
 
 # Data fetching and combination --------------------------------------------------------
@@ -225,7 +226,7 @@ def preprocess_adsb(
     """
     # create preprocessed folder if it does not exist
     if os.path.isdir(path_save) is False:
-        os.mkdir(path_save)
+        Path(path_save).mkdir(parents=True, exist_ok=True)
     # iterate over each monthly file
     files = glob.glob(f"{path_get}/*.parquet", recursive=True)
     for file in tqdm(files):
@@ -235,6 +236,7 @@ def preprocess_adsb(
         check_file = Path(f"{path_save}/preprocessed_{year}_{month}.parquet")
         if check_file.is_file() is False:
             # load data
+            print(file)
             trajs = Traffic.from_file(file)
             # preprocess data
             trajs_proc = (
@@ -252,3 +254,18 @@ def preprocess_adsb(
             trajs_save.to_parquet(
                 f"{path_save}/preprocessed_{year}_{month}.parquet"
             )
+
+
+def process_cell(cell, alltrajs, home_path):
+    check_file = Path(f"{home_path}/data/{cell.id}/04_cells/{cell.id}.parquet")
+    print(f"Processing cell {cell.id}...")
+    if check_file.is_file():
+        return
+    celldata = alltrajs[
+        (alltrajs.latitude.between(cell.lat_min, cell.lat_max))
+        & (alltrajs.longitude.between(cell.lon_min, cell.lon_max))
+        & (alltrajs.altitude.between(cell.alt_min, cell.alt_max))
+    ]
+    Traffic(celldata).to_parquet(
+        f"{home_path}/data/{cell.id}/04_cells/{cell.id}.parquet"
+    )
