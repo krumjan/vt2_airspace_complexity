@@ -1,16 +1,16 @@
+from pathlib import Path
+from typing import Union, Tuple
+
 import glob
 import multiprocessing as mp
 import os
+
 import pandas as pd
-
-from pathlib import Path
 from shapely.geometry.base import BaseGeometry
-
 from tqdm.auto import tqdm
+
 from traffic.core import Traffic
 from traffic.data import opensky
-from typing import Union, Tuple
-import utils.general as util_general
 
 
 # Data fetching and combination --------------------------------------------------------
@@ -55,7 +55,7 @@ def download_adsb(
             tf,
             bounds=area,
             progressbar=tqdm,
-            cached=True,
+            cached=False,
             other_params=f" and baroaltitude >= {lower} and baroaltitude <= {upper}\
                   and onground = false ",
         )
@@ -161,48 +161,6 @@ def combine_adsb(path_raw: str, path_combined: str) -> None:
             )
 
 
-def reduce_adsb(
-    flights: Traffic,
-    lat_min: float,
-    lat_max: float,
-    lon_min: float,
-    lon_max: float,
-    alt_min: float,
-    alt_max: float,
-) -> Traffic:
-    """
-    Reduces the ADS-B data to the given geographical footprint.
-
-    Parameters
-    ----------
-    flights : Traffic
-        ADS-B data
-    lat_min : float
-        Minimum latitude
-    lat_max : float
-        Maximum latitude
-    lon_min : float
-        Minimum longitude
-    lon_max : float
-        Maximum longitude
-
-    Returns
-    -------
-    Traffic
-        Reduced ADS-B data
-    """
-
-    flights_df = flights.data
-
-    flights_df = flights_df[
-        (flights_df.latitude.between(lat_min, lat_max))
-        & (flights_df.longitude.between(lon_min, lon_max))
-        & (flights_df.altitude.between(alt_min, alt_max))
-    ]
-
-    return Traffic(flights_df)
-
-
 # Data preprocessing -------------------------------------------------------------------
 def preprocess_adsb(
     path_get: str,
@@ -254,18 +212,3 @@ def preprocess_adsb(
             trajs_save.to_parquet(
                 f"{path_save}/preprocessed_{year}_{month}.parquet"
             )
-
-
-def process_cell(cell, alltrajs, home_path):
-    check_file = Path(f"{home_path}/data/{cell.id}/04_cells/{cell.id}.parquet")
-    print(f"Processing cell {cell.id}...")
-    if check_file.is_file():
-        return
-    celldata = alltrajs[
-        (alltrajs.latitude.between(cell.lat_min, cell.lat_max))
-        & (alltrajs.longitude.between(cell.lon_min, cell.lon_max))
-        & (alltrajs.altitude.between(cell.alt_min, cell.alt_max))
-    ]
-    Traffic(celldata).to_parquet(
-        f"{home_path}/data/{cell.id}/04_cells/{cell.id}.parquet"
-    )
