@@ -159,6 +159,11 @@ def yearly_heatmap(
     fig.update_yaxes(title_text="Hour of the day")
     fig.update_layout(title_text="Hourly observed aircraft count")
     fig.update_layout(coloraxis_colorbar=dict(title="AC count"))
+
+    # update ticks
+    fig.update_xaxes(tickmode="linear", tick0=0, dtick=10)
+    fig.update_yaxes(tickmode="linear", tick0=0, dtick=1)
+
     return fig
 
 
@@ -244,7 +249,7 @@ def heatmap_low_hour(
         )
     )
 
-    # Adjust axis ranges and labels
+    # Adjust axis ranges, ticks and labels
     fig.update_xaxes(range=[0.5, 365.5])
     fig.update_yaxes(range=[0.5, 24.5])
     fig.update_layout(legend={"itemsizing": "constant"})
@@ -252,5 +257,7 @@ def heatmap_low_hour(
     fig.update_layout(title_text="Distribution of low traffic hours")
     fig.update_xaxes(title_text="Day of the year")
     fig.update_yaxes(title_text="Hour of the day")
+    fig.update_xaxes(tickmode="linear", tick0=0, dtick=10)
+    fig.update_yaxes(tickmode="linear", tick0=0, dtick=1)
 
     return fig

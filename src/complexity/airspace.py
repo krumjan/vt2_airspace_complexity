@@ -261,13 +261,18 @@ class airspace:
             hourly_users = df.groupby(["timestamp_entered_h"])[
                 "flight_id"
             ].count()
-            hourly_df = pd.concat([hourly_users, hourly_stay], axis=1)
+            hourly_users.name = "ac_count"
+            hourly_ids = df.groupby(["timestamp_entered_h"])[
+                "flight_id"
+            ].apply(list)
+            hourly_ids.name = "flight_ids"
+            hourly_df = pd.concat(
+                [hourly_users, hourly_stay, hourly_ids], axis=1
+            )
             hourly_df.reset_index(inplace=True)
             hourly_df = hourly_df.rename(
                 {"timestamp_entered_h": "hour"}, axis=1
             )
-            hourly_df = hourly_df.rename({"flight_id": "ac_count"}, axis=1)
-            hourly_df = hourly_df.rename({"flight_id": "ac_count"}, axis=1)
 
             # Fill missing hours with 0
             hourly_df = (
@@ -296,6 +301,7 @@ class airspace:
                     "day_of_year",
                     "ac_count",
                     "stay_h",
+                    "flight_ids",
                 ]
             ]
             # Save dataframe as parquet file
@@ -312,3 +318,89 @@ class airspace:
             if return_df:
                 hourly_df = pd.read_parquet(check_file)
                 return hourly_df
+
+    def reduce_low_traffic(self, reference_type: str, reference_value: float):
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Only do the steps if the required file does not exist yet
+        if not os.path.exists(
+            f"{home_path}/data/{self.id}/"
+            "05_low_traffic/trajs_tma_low.parquet"
+        ):
+            # If any of the required files does not exist, raise an exception
+            if not os.path.exists(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_rec.parquet"
+            ) or not os.path.exists(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_tma.parquet"
+            ):
+                raise Exception(
+                    "Preprocessed trajectories have not been created yet. "
+                    "Please run 'preprocess_data()' first."
+                )
+            if not os.path.exists(
+                f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+            ):
+                raise Exception(
+                    "Hourly aggregated traffic information has not been created yet. "
+                    "Please run 'get_hourly_df()' first."
+                )
+
+            # Load trajectory data and hourly aggregated traffic information
+            hourly_df = pd.read_parquet(
+                f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+            )
+            trajs_rec = Traffic.from_file(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_rec.parquet"
+            )
+            trajs_tma = Traffic.from_file(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_tma.parquet"
+            )
+
+            # Determine the threshold
+            if reference_type == "mean":
+                threshold = hourly_df["ac_count"].mean()
+            elif reference_type == "median":
+                threshold = hourly_df["ac_count"].median()
+            elif reference_type == "quantile":
+                threshold = hourly_df["ac_count"].quantile(reference_value)
+            elif reference_type == "max_perc":
+                threshold = hourly_df["ac_count"].max() * reference_value
+            else:
+                raise ValueError(
+                    f"Reference type {reference_type} not recognized. "
+                    "Please use 'mean', 'median', 'quantile' or 'max_perc'."
+                )
+
+            # Determine hours below threshold
+            hourly_df["below_th"] = hourly_df["ac_count"] < threshold
+
+            # Get id of all flights during these low traffic hours
+            low_ids = hourly_df[hourly_df.below_th == True].flight_ids
+            low_ids_list = []
+            for x in low_ids:
+                if isinstance(x, list):
+                    low_ids_list.append(x)
+                else:
+                    low_ids_list.append([x])
+            low_ids = [item for sublist in low_ids_list for item in sublist]
+
+            # Reduce trajectory data to low traffic hours
+            trajs_rec_low = trajs_rec[low_ids]
+            trajs_tma_low = trajs_tma[low_ids]
+
+            # Save reduced trajectory data
+            if not os.path.exists(
+                f"{home_path}/data/{self.id}/05_low_traffic/"
+            ):
+                os.makedirs(f"{home_path}/data/{self.id}/05_low_traffic/")
+            trajs_rec_low.to_parquet(
+                f"{home_path}/data/{self.id}/05_low_traffic/trajs_rec_low.parquet"
+            )
+            trajs_tma_low.to_parquet(
+                f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
+            )
