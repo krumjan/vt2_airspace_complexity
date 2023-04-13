@@ -410,64 +410,92 @@ class airspace:
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load reduced trajectory data
-        trajs = Traffic.from_file(
-            f"{home_path}/data/{self.id}/05_low_traffic/trajs_rec_low.parquet"
-        )
+        # Only do the steps if the required file does not exist yet
+        if not os.path.exists(f"{home_path}/data/{self.id}/06_training/X.npy"):
+            # If directory does not exist, create it
+            if not os.path.exists(f"{home_path}/data/{self.id}/06_training/"):
+                os.makedirs(f"{home_path}/data/{self.id}/06_training/")
 
-        trajs = trajs.resample(200).eval(desc="resampling", max_workers=20)
+            # If resampled trajectory data does not exist, create it
+            if not os.path.exists(
+                f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
+            ):
+                # Load reduced trajectory data
+                trajs = Traffic.from_file(
+                    f"{home_path}/data/{self.id}/05_low_traffic/trajs_rec_low.parquet"
+                )
+                # Resample
+                trajs = (
+                    trajs.resample("1s")
+                    .resample(100)
+                    .eval(desc="resampling", max_workers=30)
+                )
+                # Save resampled trajectory data
+                trajs.to_parquet(
+                    f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
+                )
 
-        X = []
-        for flight in tqdm(trajs):
-            df = flight.data
-            t0 = df["timestamp"].iloc[0]
-            df["timedelta"] = df["timestamp"] - t0
-            df = flight.data[
-                ["timedelta", "latitude", "longitude", "altitude"]
-            ]
-            df = (
-                df.interpolate(method="linear", limit_direction="both")
-                .ffill()
-                .bfill()
-            )
-            df_as_np = df.to_numpy()
-            X.append(df_as_np)
-
-        X = np.array(X)
-
-        # Remove trajs with missing data
-        indexList_X_nan = [np.any(i) for i in np.isnan(X)]
-        X = np.delete(X, indexList_X_nan, axis=0)
-
-        # Min Max scaling
-        lat_max = np.max(X[:, :, 0])
-        lat_min = np.min(X[:, :, 0])
-        lon_max = np.max(X[:, :, 1])
-        lon_min = np.min(X[:, :, 1])
-        alt_max = np.max(X[:, :, 2])
-        alt_min = np.min(X[:, :, 2])
-        X_norm = X.copy()
-        X_norm[:, :, 0] = (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min)
-        X_norm[:, :, 1] = (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min)
-        X_norm[:, :, 2] = (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min)
-
-        np.save(f"{home_path}/data/{self.id}/06_training/X", X)
-        np.save(f"{home_path}/data/{self.id}/06_training/X_norm", X_norm)
-        with open(
-            f"{home_path}/data/{self.id}/06_training/normalisation.txt", "w"
-        ) as f:
-            f.write(
-                str(lat_max)
-                + " "
-                + str(lat_min)
-                + " "
-                + str(lon_max)
-                + " "
-                + str(lon_min)
-                + " "
-                + str(alt_max)
-                + " "
-                + str(alt_min)
+            # load resampled trajectory data
+            trajs = Traffic.from_file(
+                f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
             )
 
-        return X
+            # Create training data array
+            X = []
+            for flight in tqdm(trajs):
+                df = flight.data
+                if len(df) == 100:
+                    df = flight.data[
+                        [
+                            "latitude",
+                            "longitude",
+                            "altitude",
+                            "groundspeed",
+                            "track",
+                        ]
+                    ]
+                    df = (
+                        df.interpolate(method="linear", limit_direction="both")
+                        .ffill()
+                        .bfill()
+                    )
+                    df_as_np = df.to_numpy()
+                    X.append(df_as_np)
+
+            X = np.array(X)
+
+            # Remove trajs with missing data
+            indexList_X_nan = [np.any(i) for i in np.isnan(X)]
+            X = np.delete(X, indexList_X_nan, axis=0)
+
+            # Min Max scaling
+            lat_max = np.max(X[:, :, 0])
+            lat_min = np.min(X[:, :, 0])
+            lon_max = np.max(X[:, :, 1])
+            lon_min = np.min(X[:, :, 1])
+            alt_max = np.max(X[:, :, 2])
+            alt_min = np.min(X[:, :, 2])
+            X_norm = X.copy()
+            X_norm[:, :, 0] = (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min)
+            X_norm[:, :, 1] = (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min)
+            X_norm[:, :, 2] = (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min)
+
+            np.save(f"{home_path}/data/{self.id}/06_training/X", X)
+            np.save(f"{home_path}/data/{self.id}/06_training/X_norm", X_norm)
+            with open(
+                f"{home_path}/data/{self.id}/06_training/normalisation.txt",
+                "w",
+            ) as f:
+                f.write(
+                    str(lat_max)
+                    + " "
+                    + str(lat_min)
+                    + " "
+                    + str(lon_max)
+                    + " "
+                    + str(lon_min)
+                    + " "
+                    + str(alt_max)
+                    + " "
+                    + str(alt_min)
+                )

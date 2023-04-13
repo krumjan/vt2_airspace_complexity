@@ -201,7 +201,7 @@ def preprocess_adsb(
                 trajs.clean_invalid()
                 .assign_id()
                 .filter()
-                .resample("1s")
+                .resample("5s")
                 .eval(max_workers=20, desc="resampling")
             )
             # type correction due to traffic bug
