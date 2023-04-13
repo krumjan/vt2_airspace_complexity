@@ -475,10 +475,17 @@ class airspace:
             lon_min = np.min(X[:, :, 1])
             alt_max = np.max(X[:, :, 2])
             alt_min = np.min(X[:, :, 2])
+            gs_max = np.max(X[:, :, 3])
+            gs_min = np.min(X[:, :, 3])
+            trk_max = np.max(X[:, :, 4])
+            trk_min = np.min(X[:, :, 4])
+
             X_norm = X.copy()
             X_norm[:, :, 0] = (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min)
             X_norm[:, :, 1] = (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min)
             X_norm[:, :, 2] = (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min)
+            X_norm[:, :, 3] = (X_norm[:, :, 3] - gs_min) / (gs_max - gs_min)
+            X_norm[:, :, 4] = (X_norm[:, :, 4] - trk_min) / (trk_max - trk_min)
 
             np.save(f"{home_path}/data/{self.id}/06_training/X", X)
             np.save(f"{home_path}/data/{self.id}/06_training/X_norm", X_norm)
@@ -498,4 +505,12 @@ class airspace:
                     + str(alt_max)
                     + " "
                     + str(alt_min)
+                    + " "
+                    + str(gs_max)
+                    + " "
+                    + str(gs_min)
+                    + " "
+                    + str(trk_max)
+                    + " "
+                    + str(trk_min)
                 )
