@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from shapely.geometry import Point
+import math
 
 from tqdm.auto import tqdm
 
@@ -14,6 +16,7 @@ from traffic.core import Traffic
 
 from utils import adsb as util_adsb
 from utils import general as util_general
+from utils import geo as util_geo
 
 
 class airspace:
@@ -36,6 +39,10 @@ class airspace:
         # Initialize class attributes
         self.id = id
         self.shape = airspace.shape
+        self.lat_max = airspace.shape.bounds[3]
+        self.lat_min = airspace.shape.bounds[1]
+        self.lon_max = airspace.shape.bounds[2]
+        self.lon_min = airspace.shape.bounds[0]
         self.lat_cen = airspace.shape.centroid.y
         self.lon_cen = airspace.shape.centroid.x
         self.alt_min = max(8500, airspace.elements[0].lower)
@@ -406,6 +413,72 @@ class airspace:
                 f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
             )
 
+    def generate_cells(self, dim: int = 20, alt_diff: int = 3000) -> None:
+        """
+        Generates a grid of cells for the airspace. The cells are saved as a list of
+        tuples (lat, lon, alt_low, alt_high) in the attribute 'grid'.
+        Parameters
+        ----------
+        dim : int, optional
+            horizontal cell size [dim x dim] in nautical miles, by default 20
+        alt_diff : int, optional
+            height of the cells in feet, by default 3000
+        """
+
+        # Generate grid
+        lats = [self.lat_max]
+        lons = [self.lon_min]
+        self.grid = []
+        lat = self.lat_max
+        lon = self.lon_min
+        while lat > self.lat_min:
+            lat = util_geo.new_pos_dist((lat, lon), dim, 180)[0]
+            lats.append(lat)
+        while lon < self.lon_max:
+            lon = util_geo.new_pos_dist((lat, lon), dim, 90)[1]
+            lons.append(lon)
+        for i in range(len(lats) - 1):
+            for j in range(len(lons) - 1):
+                center_lat = (lats[i] + lats[i + 1]) / 2
+                center_lon = (lons[j] + lons[j + 1]) / 2
+                grid_pos = Point(center_lon, center_lat)
+                if self.shape.contains(grid_pos):
+                    self.grid.append(
+                        (
+                            lats[i],
+                            lats[i + 1],
+                            lons[j],
+                            lons[j + 1],
+                            center_lat,
+                            center_lon,
+                        )
+                    )
+
+        # Generate altitude intervals
+        count = np.array(
+            [*range(math.ceil((self.alt_max - self.alt_min) / alt_diff))]
+        )
+        alts_low = 18000 + 3000 * count
+        alts_high = 18000 + 3000 * (count + 1)
+        alts = np.array(list(zip(alts_low, alts_high)))
+        self.levels = alts
+
+        # Generate cubes
+        self.cubes = []
+        for level in self.levels:
+            for idx, grid in enumerate(self.grid):
+                self.cubes.append(
+                    cube(
+                        id=f"range_{level[0]}_grid_{idx}",
+                        lat_min=grid[0],
+                        lat_max=grid[1],
+                        lon_min=grid[3],
+                        lon_max=grid[2],
+                        alt_low=level[0],
+                        alt_high=level[1],
+                    )
+                )
+
     def create_training_data(self):
         # Define home path
         home_path = util_general.get_project_root()
@@ -444,14 +517,18 @@ class airspace:
             X = []
             for flight in tqdm(trajs):
                 df = flight.data
+                start_time = df.timestamp.iloc[0]
+                df["timedelta"] = (
+                    df["timestamp"] - start_time
+                ).dt.total_seconds()
                 if len(df) == 100:
-                    df = flight.data[
+                    df = df[
                         [
                             "latitude",
                             "longitude",
                             "altitude",
                             "groundspeed",
-                            "track",
+                            "timedelta",
                         ]
                     ]
                     df = (
@@ -477,15 +554,25 @@ class airspace:
             alt_min = np.min(X[:, :, 2])
             gs_max = np.max(X[:, :, 3])
             gs_min = np.min(X[:, :, 3])
-            trk_max = np.max(X[:, :, 4])
-            trk_min = np.min(X[:, :, 4])
+            tm_max = np.max(X[:, :, 4])
+            tm_min = np.min(X[:, :, 4])
 
             X_norm = X.copy()
-            X_norm[:, :, 0] = (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min)
-            X_norm[:, :, 1] = (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min)
-            X_norm[:, :, 2] = (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min)
-            X_norm[:, :, 3] = (X_norm[:, :, 3] - gs_min) / (gs_max - gs_min)
-            X_norm[:, :, 4] = (X_norm[:, :, 4] - trk_min) / (trk_max - trk_min)
+            X_norm[:, :, 0] = (
+                2 * (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min) - 1
+            )
+            X_norm[:, :, 1] = (
+                2 * (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min) - 1
+            )
+            X_norm[:, :, 2] = (
+                2 * (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min) - 1
+            )
+            X_norm[:, :, 3] = (
+                2 * (X_norm[:, :, 3] - gs_min) / (gs_max - gs_min) - 1
+            )
+            X_norm[:, :, 4] = (
+                2 * (X_norm[:, :, 4] - tm_min) / (tm_max - tm_min) - 1
+            )
 
             np.save(f"{home_path}/data/{self.id}/06_training/X", X)
             np.save(f"{home_path}/data/{self.id}/06_training/X_norm", X_norm)
@@ -510,7 +597,165 @@ class airspace:
                     + " "
                     + str(gs_min)
                     + " "
-                    + str(trk_max)
+                    + str(tm_max)
                     + " "
-                    + str(trk_min)
+                    + str(tm_min)
                 )
+
+    def visualise_cells(self) -> None:
+        """
+        Visualises the airspace grid and altitude levels. The function requires the
+        attribute 'grid' to exist. If it does not exist, an error is raised.
+        Raises
+        ------
+        ValueError
+            Error is raised if the attribute 'grid' does not exist.
+        """
+        # Raise error if grid does not exist
+        if not hasattr(self, "grid"):
+            raise ValueError(
+                "Grid does not exist. Please execute function "
+                "generate_cells() first."
+            )
+
+        # Plot grid
+        print("Grid:")
+        print("-----------------------------")
+        fig = go.Figure(go.Scattermapbox())
+        fig.update_layout(
+            mapbox_style="carto-positron",
+            showlegend=False,
+            height=800,
+            width=800,
+            margin={"l": 0, "b": 0, "t": 0, "r": 0},
+            mapbox_center_lat=self.lat_cen,
+            mapbox_center_lon=self.lon_cen,
+            mapbox_zoom=6,
+        )
+        for pos in self.grid:
+            fig.add_trace(
+                go.Scattermapbox(
+                    lat=[pos[0], pos[0], pos[1], pos[1], pos[0]],
+                    lon=[pos[2], pos[3], pos[3], pos[2], pos[2]],
+                    mode="lines",
+                    line=dict(width=2, color="red"),
+                    fill="toself",
+                    fillcolor="rgba(255, 0, 0, 0.3)",
+                    opacity=0.2,
+                    name="Rectangle",
+                )
+            )
+        # Add airspace shape to the plot
+        lons, lats = self.shape.exterior.xy
+        trace = go.Scattermapbox(
+            mode="lines",
+            lat=list(lats),
+            lon=list(lons),
+            line=dict(width=2, color="blue"),
+        )
+        fig.add_trace(trace)
+        fig.show()
+
+        # Print vertical ranges
+        print("Vertical ranges:")
+        print("-----------------------------")
+        for idx, level in enumerate(self.levels[::-1]):
+            print(
+                "Range "
+                + "{:02}".format(len(self.levels) - idx)
+                + f" -> {level[0]}ft - {level[1]}ft"
+            )
+
+
+class cube:
+    def __init__(
+        self,
+        id: str,
+        lat_min: float,
+        lat_max: float,
+        lon_min: float,
+        lon_max: float,
+        alt_low: int,
+        alt_high: int,
+    ) -> None:
+        """
+        Class for a cube in the airspace grid. The cube is defined by its id, the
+        minimum and maximum latitude, longitude and altitude.
+        Parameters
+        ----------
+        id : str
+            id of the cube in the format 'range_altitude_grid_increasing_number'
+        lat_min : float
+            minimum latitude of the cube
+        lat_max : float
+            maximum latitude of the cube
+        lon_min : float
+            minimum longitude of the cube
+        lon_max : float
+            maximum longitude of the cube
+        alt_low : int
+            lower altitude bound of the cube
+        alt_high : int
+            higher altitude bound of the cube
+        """
+        self.id = id
+        self.lat_min = lat_min
+        self.lat_max = lat_max
+        self.lon_min = lon_min
+        self.lon_max = lon_max
+        self.alt_low = alt_low
+        self.alt_high = alt_high
+        self.lat_cen = (self.lat_min + self.lat_max) / 2
+        self.lon_cen = (self.lon_min + self.lon_max) / 2
+        self.alt_cen = (self.alt_low + self.alt_high) / 2
+
+    def visualise(self) -> None:
+        """
+        Visualises the cube. The location of the cube is shown on a map and its upper
+        and lower altitude bounds (vertical range) are printed out.
+        """
+        # Plot grid
+        print("Location:")
+        print("-----------------------------")
+        fig = go.Figure(go.Scattermapbox())
+        fig.update_layout(
+            mapbox_style="carto-positron",
+            showlegend=False,
+            height=800,
+            width=800,
+            margin={"l": 0, "b": 0, "t": 0, "r": 0},
+            mapbox_center_lat=self.lat_cen,
+            mapbox_center_lon=self.lon_cen,
+            mapbox_zoom=6,
+        )
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=[
+                    self.lat_min,
+                    self.lat_min,
+                    self.lat_max,
+                    self.lat_max,
+                    self.lat_min,
+                ],
+                lon=[
+                    self.lon_min,
+                    self.lon_max,
+                    self.lon_max,
+                    self.lon_min,
+                    self.lon_min,
+                ],
+                mode="lines",
+                line=dict(width=2, color="red"),
+                fill="toself",
+                fillcolor="rgba(255, 0, 0, 0.3)",
+                opacity=0.2,
+                name="Rectangle",
+            )
+        )
+        fig.show()
+
+        # Print vertical ranges
+        print("Vertical range:")
+        print("-----------------------------")
+        print(f"{self.alt_low}ft - {self.alt_high}ft")
+        print("-----------------------------")
