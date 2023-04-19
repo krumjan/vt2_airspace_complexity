@@ -1,22 +1,22 @@
-import os
-import random
 import glob
+import math
+import os
+import pickle
+import random
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from shapely.geometry import Point
-import math
-
 from tqdm.auto import tqdm
 
 import traffic
 from traffic.core import Traffic
 
 from utils import adsb as util_adsb
-from utils import general as util_general
 from utils import geo as util_geo
+from utils import general as util_general
 
 
 class airspace:
@@ -470,10 +470,10 @@ class airspace:
                 self.cubes.append(
                     cube(
                         id=f"range_{level[0]}_grid_{idx}",
-                        lat_min=grid[0],
-                        lat_max=grid[1],
-                        lon_min=grid[3],
-                        lon_max=grid[2],
+                        lat_max=grid[0],
+                        lat_min=grid[1],
+                        lon_max=grid[3],
+                        lon_min=grid[2],
                         alt_low=level[0],
                         alt_high=level[1],
                     )
@@ -665,6 +665,134 @@ class airspace:
                 + "{:02}".format(len(self.levels) - idx)
                 + f" -> {level[0]}ft - {level[1]}ft"
             )
+
+    def run_simulation(self, duration: int, interval: int) -> None:
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Load data and get ids and dataframe
+        print("Loading data...")
+        trajs_low = Traffic.from_file(
+            f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
+        )
+        ids = trajs_low.flight_ids
+        trajs_low_data = trajs_low.data
+
+        totalseconds = duration * 24 * 60 * 60
+        amount_deploys = int(totalseconds / interval)
+
+        timelist = []
+
+        timer = 0
+        for i in range(int(amount_deploys)):
+            timelist.append(timer)
+            timer = timer + interval
+
+        indices = np.random.default_rng().choice(
+            len(ids), len(timelist), replace=True
+        )
+
+        random_ids = np.array(ids)[indices]
+        random_times = np.array(timelist)
+
+        grouped = trajs_low_data.groupby("flight_id")
+
+        # generate simulated trajectories
+        print("Generating simulated trajectories...")
+        df_all = []
+        start_time = pd.Timestamp("2000-01-01 00:00:00")
+
+        for id, tm in tqdm(
+            zip(random_ids, random_times), total=len(random_ids)
+        ):
+            traj_time = start_time + pd.Timedelta(seconds=tm)
+            temp = grouped.get_group(id)
+            timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
+            new_timestamp = traj_time + timedelta
+            timestring = str(new_timestamp.iloc[0].time())
+            flight_id = temp["flight_id"].iloc[0]
+            temp = temp[["latitude", "longitude", "altitude", "icao24"]]
+            temp.insert(0, "timestamp", new_timestamp)
+            temp.insert(1, "flight_id", flight_id + "_" + timestring)
+            df_all.append(temp)
+
+        df_traf = (
+            pd.concat(df_all, axis=0)
+            .sort_values(by=["timestamp"])
+            .reset_index()
+        )
+        if not os.path.exists(f"{home_path}/data/{self.id}/06_simulation/"):
+            os.makedirs(f"{home_path}/data/{self.id}/06_simulation/")
+        df_traf.to_parquet(
+            f"{home_path}/data/{self.id}/06_simulation/trajs_simulation.parquet",
+            index=False,
+        )
+
+        print("Checking simultaneous trajectories...")
+        if not os.path.exists(f"{home_path}/data/{self.id}/07_cube_data/"):
+            os.makedirs(f"{home_path}/data/{self.id}/07_cube_data/")
+        for cube in tqdm(self.cubes):
+            subset = df_traf.loc[
+                (df_traf["latitude"] >= cube.lat_min)
+                & (df_traf["latitude"] <= cube.lat_max)
+                & (df_traf["longitude"] >= cube.lon_min)
+                & (df_traf["longitude"] <= cube.lon_max)
+                & (df_traf["altitude"] >= cube.alt_low)
+                & (df_traf["altitude"] <= cube.alt_high)
+            ]
+            subset.to_parquet(
+                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_trajs.parquet",
+                index=False,
+            )
+
+            in_out = (
+                subset.groupby("flight_id")["timestamp"]
+                .agg(["min", "max"])
+                .reset_index()
+                .sort_values(by="min")
+            )
+            in_out.to_parquet(
+                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_inout.parquet",
+                index=False,
+            )
+
+            df = in_out
+
+            count = 0
+            pairs = []
+
+            # Create a dictionary of flights indexed by their max value
+            flight_dict = {
+                flight.max: [flight.flight_id] for flight in df.itertuples()
+            }
+
+            # Find overlapping flights
+            pairs = []
+            count = 0
+            for flight in df.itertuples():
+                matches = []
+                for other_flight in flight_dict.get(flight.min, []):
+                    if (
+                        flight.max
+                        > df.loc[
+                            df["flight_id"] == other_flight, "min"
+                        ].values[0]
+                    ):
+                        matches.append(other_flight)
+                        count += 1
+                if matches:
+                    matches.append(flight.flight_id)
+                    pairs.append(tuple(matches))
+
+            with open(
+                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_pairs.pkl",
+                "wb",
+            ) as fp:
+                pickle.dump(pairs, fp)
+
+            # print(
+            #     f"{cube.id} with {len(df)} flights with {len(pairs)} overlapping intervals."
+            # )
 
 
 class cube:
