@@ -153,7 +153,7 @@ class airspace:
             )
 
     def plot(
-        self, traj_sample: bool = False, traj_num: int = 100
+        self, traj_sample: bool = False, traj_num: int = 200
     ) -> go.Figure:
         """
         Generates a plot of the airspace shape. If the parameter 'traj_sample' is set to
@@ -177,7 +177,8 @@ class airspace:
         # Create mapbox
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
-            mapbox_style="carto-positron",
+            mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
+            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHRkZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
             height=800,
             width=800,
@@ -192,7 +193,7 @@ class airspace:
             mode="lines",
             lat=list(lats),
             lon=list(lons),
-            line=dict(width=2, color="blue"),
+            line=dict(width=2, color="red"),
         )
         fig.add_trace(trace)
 
@@ -214,7 +215,7 @@ class airspace:
                         mode="lines",
                         lat=traj.data["latitude"],
                         lon=traj.data["longitude"],
-                        line=dict(width=2, color="red"),
+                        line=dict(width=2, color="blue"),
                     )
                 )
 
@@ -458,8 +459,8 @@ class airspace:
         count = np.array(
             [*range(math.ceil((self.alt_max - self.alt_min) / alt_diff))]
         )
-        alts_low = 18000 + 3000 * count
-        alts_high = 18000 + 3000 * (count + 1)
+        alts_low = 18000 + alt_diff * count
+        alts_high = 18000 + alt_diff * (count + 1)
         alts = np.array(list(zip(alts_low, alts_high)))
         self.levels = alts
 
@@ -623,7 +624,8 @@ class airspace:
         print("-----------------------------")
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
-            mapbox_style="carto-positron",
+            mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
+            mapbox_accesstoken='pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHRkZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg',
             showlegend=False,
             height=800,
             width=800,
@@ -638,9 +640,9 @@ class airspace:
                     lat=[pos[0], pos[0], pos[1], pos[1], pos[0]],
                     lon=[pos[2], pos[3], pos[3], pos[2], pos[2]],
                     mode="lines",
-                    line=dict(width=2, color="red"),
+                    line=dict(width=2, color="blue"),
                     fill="toself",
-                    fillcolor="rgba(255, 0, 0, 0.3)",
+                    fillcolor="rgba(0, 0, 255, 0.3)",
                     opacity=0.2,
                     name="Rectangle",
                 )
@@ -651,7 +653,7 @@ class airspace:
             mode="lines",
             lat=list(lats),
             lon=list(lons),
-            line=dict(width=2, color="blue"),
+            line=dict(width=2, color="red"),
         )
         fig.add_trace(trace)
         fig.show()
@@ -835,7 +837,7 @@ class cube:
         self.alt_high = alt_high
         self.lat_cen = (self.lat_min + self.lat_max) / 2
         self.lon_cen = (self.lon_min + self.lon_max) / 2
-        self.alt_cen = (self.alt_low + self.alt_high) / 2
+        # self.alt_cen = (self.alt_low + self.alt_high) / 2
 
     def visualise(self) -> None:
         """
