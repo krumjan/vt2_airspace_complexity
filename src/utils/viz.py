@@ -7,7 +7,9 @@ import seaborn as sns
 
 
 def hourly_overview(
-    hourly_df: pd.DataFrame, reference_type: str, reference_value: float = 0.5
+    hourly_df: pd.DataFrame,
+    reference_type: str = None,
+    reference_value: float = 0.5,
 ) -> plotly.graph_objs._figure.Figure:
     """
     Generate a plotly figure showing the distribution of hourly aircraft count .
@@ -25,7 +27,9 @@ def hourly_overview(
     """
 
     # Determine the threshold
-    if reference_type == "mean":
+    if reference_type == None:
+        pass
+    elif reference_type == "mean":
         threshold = hourly_df["ac_count"].mean()
     elif reference_type == "median":
         threshold = hourly_df["ac_count"].median()
@@ -38,6 +42,8 @@ def hourly_overview(
             f"Reference type {reference_type} not recognized. "
             "Please use 'mean', 'median', 'quantile' or 'max_perc'."
         )
+
+    print(threshold)
 
     # generate subplots containing four plots
     fig, axes = plt.subplots(2, 2)
@@ -59,7 +65,6 @@ def hourly_overview(
     axes[0, 0].grid(
         axis="y", color="gray", linestyle="--", linewidth=0.5, alpha=0.5
     )
-    axes[0, 0].axhline(threshold, ls="--", color="red", linewidth=1)
 
     # Plot the distribution ot the hourly aircraft count per day of the week
     hourly_df["weekday"] = hourly_df["weekday"].str[0:3]
@@ -81,7 +86,6 @@ def hourly_overview(
     axes[0, 1].grid(
         axis="y", color="gray", linestyle="--", linewidth=0.5, alpha=0.5
     )
-    axes[0, 1].axhline(threshold, ls="--", color="red", linewidth=1)
 
     # Plot the distribution ot the hourly aircraft count per day of the month
     sns.boxplot(
@@ -100,7 +104,6 @@ def hourly_overview(
     axes[1, 0].grid(
         axis="y", color="gray", linestyle="--", linewidth=0.5, alpha=0.5
     )
-    axes[1, 0].axhline(threshold, ls="--", color="red", linewidth=1)
 
     # Plot the distribution ot the hourly aircraft count per month
     sns.boxplot(
@@ -117,7 +120,12 @@ def hourly_overview(
     axes[1, 1].grid(
         axis="y", color="gray", linestyle="--", linewidth=0.5, alpha=0.5
     )
-    axes[1, 1].axhline(threshold, ls="--", color="red", linewidth=1)
+
+    if reference_type is not None:
+        axes[0, 0].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[0, 1].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[1, 0].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[1, 1].axhline(threshold, ls="--", color="red", linewidth=1)
 
     # Return the figure
     return fig
