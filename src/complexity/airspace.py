@@ -17,6 +17,7 @@ from traffic.core import Traffic
 from utils import adsb as util_adsb
 from utils import geo as util_geo
 from utils import general as util_general
+import multiprocessing as mp
 
 
 class airspace:
@@ -45,8 +46,8 @@ class airspace:
         self.lon_min = airspace.shape.bounds[0]
         self.lat_cen = airspace.shape.centroid.y
         self.lon_cen = airspace.shape.centroid.x
-        self.alt_min = max(8500, airspace.elements[0].lower)
-        self.alt_max = min(45000, airspace.elements[-1].upper)
+        self.alt_min = max(8500, airspace.elements[0].lower * 100)
+        self.alt_max = min(45000, airspace.elements[-1].upper * 100)
 
     def get_data(
         self,
@@ -178,7 +179,8 @@ class airspace:
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
             mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
-            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHRkZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
+            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
+            "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
             height=800,
             width=800,
@@ -480,129 +482,6 @@ class airspace:
                     )
                 )
 
-    def create_training_data(self):
-        # Define home path
-        home_path = util_general.get_project_root()
-
-        # Only do the steps if the required file does not exist yet
-        if not os.path.exists(f"{home_path}/data/{self.id}/06_training/X.npy"):
-            # If directory does not exist, create it
-            if not os.path.exists(f"{home_path}/data/{self.id}/06_training/"):
-                os.makedirs(f"{home_path}/data/{self.id}/06_training/")
-
-            # If resampled trajectory data does not exist, create it
-            if not os.path.exists(
-                f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
-            ):
-                # Load reduced trajectory data
-                trajs = Traffic.from_file(
-                    f"{home_path}/data/{self.id}/05_low_traffic/trajs_rec_low.parquet"
-                )
-                # Resample
-                trajs = (
-                    trajs.resample("1s")
-                    .resample(100)
-                    .eval(desc="resampling", max_workers=30)
-                )
-                # Save resampled trajectory data
-                trajs.to_parquet(
-                    f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
-                )
-
-            # load resampled trajectory data
-            trajs = Traffic.from_file(
-                f"{home_path}/data/{self.id}/06_training/resampled_100.parquet"
-            )
-
-            # Create training data array
-            X = []
-            for flight in tqdm(trajs):
-                df = flight.data
-                start_time = df.timestamp.iloc[0]
-                df["timedelta"] = (
-                    df["timestamp"] - start_time
-                ).dt.total_seconds()
-                if len(df) == 100:
-                    df = df[
-                        [
-                            "latitude",
-                            "longitude",
-                            "altitude",
-                            "groundspeed",
-                            "timedelta",
-                        ]
-                    ]
-                    df = (
-                        df.interpolate(method="linear", limit_direction="both")
-                        .ffill()
-                        .bfill()
-                    )
-                    df_as_np = df.to_numpy()
-                    X.append(df_as_np)
-
-            X = np.array(X)
-
-            # Remove trajs with missing data
-            indexList_X_nan = [np.any(i) for i in np.isnan(X)]
-            X = np.delete(X, indexList_X_nan, axis=0)
-
-            # Min Max scaling
-            lat_max = np.max(X[:, :, 0])
-            lat_min = np.min(X[:, :, 0])
-            lon_max = np.max(X[:, :, 1])
-            lon_min = np.min(X[:, :, 1])
-            alt_max = np.max(X[:, :, 2])
-            alt_min = np.min(X[:, :, 2])
-            gs_max = np.max(X[:, :, 3])
-            gs_min = np.min(X[:, :, 3])
-            tm_max = np.max(X[:, :, 4])
-            tm_min = np.min(X[:, :, 4])
-
-            X_norm = X.copy()
-            X_norm[:, :, 0] = (
-                2 * (X_norm[:, :, 0] - lat_min) / (lat_max - lat_min) - 1
-            )
-            X_norm[:, :, 1] = (
-                2 * (X_norm[:, :, 1] - lon_min) / (lon_max - lon_min) - 1
-            )
-            X_norm[:, :, 2] = (
-                2 * (X_norm[:, :, 2] - alt_min) / (alt_max - alt_min) - 1
-            )
-            X_norm[:, :, 3] = (
-                2 * (X_norm[:, :, 3] - gs_min) / (gs_max - gs_min) - 1
-            )
-            X_norm[:, :, 4] = (
-                2 * (X_norm[:, :, 4] - tm_min) / (tm_max - tm_min) - 1
-            )
-
-            np.save(f"{home_path}/data/{self.id}/06_training/X", X)
-            np.save(f"{home_path}/data/{self.id}/06_training/X_norm", X_norm)
-            with open(
-                f"{home_path}/data/{self.id}/06_training/normalisation.txt",
-                "w",
-            ) as f:
-                f.write(
-                    str(lat_max)
-                    + " "
-                    + str(lat_min)
-                    + " "
-                    + str(lon_max)
-                    + " "
-                    + str(lon_min)
-                    + " "
-                    + str(alt_max)
-                    + " "
-                    + str(alt_min)
-                    + " "
-                    + str(gs_max)
-                    + " "
-                    + str(gs_min)
-                    + " "
-                    + str(tm_max)
-                    + " "
-                    + str(tm_min)
-                )
-
     def visualise_cells(self) -> None:
         """
         Visualises the airspace grid and altitude levels. The function requires the
@@ -625,7 +504,8 @@ class airspace:
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
             mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
-            mapbox_accesstoken='pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHRkZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg',
+            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
+            "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
             height=800,
             width=800,
@@ -668,19 +548,24 @@ class airspace:
                 + f" -> {level[0]}ft - {level[1]}ft"
             )
 
-    def run_simulation(self, duration: int, interval: int) -> None:
+    def run_simulation(
+        self,
+        # num: int,
+        args,
+    ) -> None:
         # Define home path
         home_path = util_general.get_project_root()
 
+        num, duration, interval = args
+
         # Load data and get ids and dataframe
-        print("Loading data...")
         trajs_low = Traffic.from_file(
             f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
         )
         ids = trajs_low.flight_ids
         trajs_low_data = trajs_low.data
 
-        totalseconds = duration * 24 * 60 * 60
+        totalseconds = duration * 60 * 60
         amount_deploys = int(totalseconds / interval)
 
         timelist = []
@@ -700,13 +585,11 @@ class airspace:
         grouped = trajs_low_data.groupby("flight_id")
 
         # generate simulated trajectories
-        print("Generating simulated trajectories...")
+        # print("Generating simulated trajectories...")
         df_all = []
         start_time = pd.Timestamp("2000-01-01 00:00:00")
 
-        for id, tm in tqdm(
-            zip(random_ids, random_times), total=len(random_ids)
-        ):
+        for id, tm in zip(random_ids, random_times):
             traj_time = start_time + pd.Timedelta(seconds=tm)
             temp = grouped.get_group(id)
             timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
@@ -723,17 +606,17 @@ class airspace:
             .sort_values(by=["timestamp"])
             .reset_index()
         )
-        if not os.path.exists(f"{home_path}/data/{self.id}/06_simulation/"):
-            os.makedirs(f"{home_path}/data/{self.id}/06_simulation/")
-        df_traf.to_parquet(
-            f"{home_path}/data/{self.id}/06_simulation/trajs_simulation.parquet",
-            index=False,
-        )
+        # if not os.path.exists(f"{home_path}/data/{self.id}/06_simulation/"):
+        #     os.makedirs(f"{home_path}/data/{self.id}/06_simulation/")
+        # df_traf.to_parquet(
+        #     f"{home_path}/data/{self.id}/06_simulation/trajs_simulation.parquet",
+        #     index=False,
+        # )
 
-        print("Checking simultaneous trajectories...")
-        if not os.path.exists(f"{home_path}/data/{self.id}/07_cube_data/"):
-            os.makedirs(f"{home_path}/data/{self.id}/07_cube_data/")
-        for cube in tqdm(self.cubes):
+        results = {}
+        total_count = 0
+
+        for cube in self.cubes:
             subset = df_traf.loc[
                 (df_traf["latitude"] >= cube.lat_min)
                 & (df_traf["latitude"] <= cube.lat_max)
@@ -742,10 +625,10 @@ class airspace:
                 & (df_traf["altitude"] >= cube.alt_low)
                 & (df_traf["altitude"] <= cube.alt_high)
             ]
-            subset.to_parquet(
-                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_trajs.parquet",
-                index=False,
-            )
+            # subset.to_parquet(
+            #     f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_trajs.parquet",
+            #     index=False,
+            # )
 
             in_out = (
                 subset.groupby("flight_id")["timestamp"]
@@ -753,23 +636,21 @@ class airspace:
                 .reset_index()
                 .sort_values(by="min")
             )
-            in_out.to_parquet(
-                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_inout.parquet",
-                index=False,
-            )
+            # in_out.to_parquet(
+            #     f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_inout.parquet",
+            #     index=False,
+            # )
 
             df = in_out
 
             count = 0
-            pairs = []
+            # pairs = []
 
             # Create a dictionary of flights indexed by their max value
             flight_dict = {
                 flight.max: [flight.flight_id] for flight in df.itertuples()
             }
 
-            # Find overlapping flights
-            pairs = []
             count = 0
             for flight in df.itertuples():
                 matches = []
@@ -782,19 +663,77 @@ class airspace:
                     ):
                         matches.append(other_flight)
                         count += 1
-                if matches:
-                    matches.append(flight.flight_id)
-                    pairs.append(tuple(matches))
 
-            with open(
-                f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_pairs.pkl",
-                "wb",
-            ) as fp:
-                pickle.dump(pairs, fp)
+            results[cube.id] = count
+            total_count += count
 
-            # print(
-            #     f"{cube.id} with {len(df)} flights with {len(pairs)} overlapping intervals."
-            # )
+        # save dictionary results
+        if not os.path.exists(
+            f"{home_path}/data/{self.id}/08_monte_carlo/cubes/"
+        ):
+            os.makedirs(f"{home_path}/data/{self.id}/08_monte_carlo/cubes/")
+        with open(
+            f"{home_path}/data/{self.id}/08_monte_carlo/cubes/{num}_results.pkl",
+            "wb",
+        ) as fp:
+            pickle.dump(results, fp)
+
+        # save total count
+        if not os.path.exists(
+            f"{home_path}/data/{self.id}/08_monte_carlo/total/"
+        ):
+            os.makedirs(f"{home_path}/data/{self.id}/08_monte_carlo/total/")
+        with open(
+            f"{home_path}/data/{self.id}/08_monte_carlo/total/{num}_total_count.pkl",
+            "wb",
+        ) as fp:
+            pickle.dump(total_count, fp)
+
+    def parallel_simulation_run(
+        self,
+        duration: int,
+        interval: int,
+        runs: int,
+        max_process: int,
+        start_num: int = 0,
+    ):
+        """
+        Runs a defined amount of simulation runs (monte carlo style), using parallel
+        processes. The simulation duration, injection interval and number of runs as
+        well as the max amount of parallel processes can be defined as parameters.
+
+        Parameters
+        ----------
+        duration : int
+            Simulation duration in hours
+        interval : int
+            Injection interval in seconds. Time between two injections of aircraft into
+            the simulation.
+        runs : int
+            Number of runs to be performed.
+        max_process : int
+            Maximum number of parallel processes to be used.
+        start_num : int, optional
+            Id number of the first simulation run to be performed. Only relevant for the
+            folder name, by default 0
+        """
+
+        # Parallelisation of the simulation runs
+        with mp.Pool(max_process) as pool:
+            list(
+                # tqdm to show progress
+                tqdm(
+                    pool.imap(
+                        # run the simulation function in parallel processes
+                        self.run_simulation,
+                        [
+                            (i, duration, interval)
+                            for i in range(start_num, start_num + runs)
+                        ],
+                    ),
+                    total=runs,
+                )
+            )
 
 
 class cube:
