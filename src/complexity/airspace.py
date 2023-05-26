@@ -75,7 +75,7 @@ class airspace:
             self.alt_min = alt_lo
             self.alt_max = alt_up
 
-    def get_data(
+    def fetch_data(
         self,
         start_date: str,
         end_date: str,
