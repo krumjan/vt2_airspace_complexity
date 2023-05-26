@@ -62,16 +62,15 @@ class airspace:
 
         else:
             self.id = id
-            shape = volume[0]
+            self.shape = volume[0]
             alt_lo = volume[1]
             alt_up = volume[2]
-            self.shape = volume
-            self.lat_max = shape.bounds[3]
-            self.lat_min = shape.bounds[1]
-            self.lon_max = shape.bounds[2]
-            self.lon_min = shape.bounds[0]
-            self.lat_cen = shape.centroid.y
-            self.lon_cen = shape.centroid.x
+            self.lat_max = self.shape.bounds[3]
+            self.lat_min = self.shape.bounds[1]
+            self.lon_max = self.shape.bounds[2]
+            self.lon_min = self.shape.bounds[0]
+            self.lat_cen = self.shape.centroid.y
+            self.lon_cen = self.shape.centroid.x
             self.alt_min = alt_lo
             self.alt_max = alt_up
 
