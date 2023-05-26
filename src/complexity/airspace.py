@@ -8,11 +8,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import shapely
 from shapely.geometry import Point
 from tqdm.auto import tqdm
 
 import traffic
 from traffic.core import Traffic
+from typing import Union, Tuple
 
 from utils import adsb as util_adsb
 from utils import geo as util_geo
@@ -22,32 +24,56 @@ import multiprocessing as mp
 
 class airspace:
     def __init__(
-        self, id: str, airspace: traffic.core.airspace.Airspace
+        self,
+        id: str,
+        volume: Union[
+            traffic.core.airspace.Airspace,
+            tuple[shapely.geometry.polygon.Polygon, float, float],
+        ],
     ) -> None:
         """
-        Class for the definition of an airspace. The airspace is defined by a tuple of
-        floats (lat_min, lat_max, lon_min, lon_max, alt_min, alt_max).
+        Class for the definition of an airspace. The airspace is defined by an id and a
+        volume. The volume can be defined either with a traffic.core.airspace.Airspace
+        object or by a tuple of a shapely.geometry.polygon.Polygon object and two floats
+        (alt_min, alt_max).
 
         Parameters
         ----------
         id : str
-            id of the cellspace (e.g. 'rectangle_Switzerland')
-        volume : tuple[float, float, float, float, int, int]
-            Definition of the cellspace volume by a tuple of floats (lat_min, lat_max,
-            lon_min, lon_max, alt_min, alt_max)
+            id of the airspace (e.g. 'LSGUAC')
+        volume : Union[traffic.core.airspace.Airspace,
+                       tuple[shapely.geometry.polygon.Polygon, float, float]]
+            Tree dimensional volume of the airspace. Can be defined either with a
+            traffic.core.airspace.Airspace object or by a tuple of a
+            shapely.geometry.polygon.Polygon object and two floats (alt_min, alt_max).
         """
 
-        # Initialize class attributes
-        self.id = id
-        self.shape = airspace.shape
-        self.lat_max = airspace.shape.bounds[3]
-        self.lat_min = airspace.shape.bounds[1]
-        self.lon_max = airspace.shape.bounds[2]
-        self.lon_min = airspace.shape.bounds[0]
-        self.lat_cen = airspace.shape.centroid.y
-        self.lon_cen = airspace.shape.centroid.x
-        self.alt_min = max(8500, airspace.elements[0].lower * 100)
-        self.alt_max = min(45000, airspace.elements[-1].upper * 100)
+        if type(volume) == traffic.core.airspace.Airspace:
+            self.id = id
+            self.shape = volume.shape
+            self.lat_max = volume.shape.bounds[3]
+            self.lat_min = volume.shape.bounds[1]
+            self.lon_max = volume.shape.bounds[2]
+            self.lon_min = volume.shape.bounds[0]
+            self.lat_cen = volume.shape.centroid.y
+            self.lon_cen = volume.shape.centroid.x
+            self.alt_min = volume.elements[0].lower
+            self.alt_max = volume.elements[-1].upper
+
+        else:
+            self.id = id
+            shape = volume[0]
+            alt_lo = volume[1]
+            alt_up = volume[2]
+            self.shape = volume
+            self.lat_max = shape.bounds[3]
+            self.lat_min = shape.bounds[1]
+            self.lon_max = shape.bounds[2]
+            self.lon_min = shape.bounds[0]
+            self.lat_cen = shape.centroid.y
+            self.lon_cen = shape.centroid.x
+            self.alt_min = alt_lo
+            self.alt_max = alt_up
 
     def get_data(
         self,
@@ -182,7 +208,7 @@ class airspace:
             mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
             "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
-            height=800,
+            height=400,
             width=800,
             margin={"l": 0, "b": 0, "t": 0, "r": 0},
             mapbox_center_lat=self.lat_cen,
@@ -669,22 +695,26 @@ class airspace:
 
         # save dictionary results
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/cubes/"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
         ):
-            os.makedirs(f"{home_path}/data/{self.id}/08_monte_carlo/cubes/")
+            os.makedirs(
+                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
+            )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/cubes/{num}_results.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/{num}_results.pkl",
             "wb",
         ) as fp:
             pickle.dump(results, fp)
 
         # save total count
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/total/"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
         ):
-            os.makedirs(f"{home_path}/data/{self.id}/08_monte_carlo/total/")
+            os.makedirs(
+                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
+            )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/total/{num}_total_count.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/{num}_total_count.pkl",
             "wb",
         ) as fp:
             pickle.dump(total_count, fp)
