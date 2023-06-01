@@ -13,6 +13,7 @@ plotly = "^5.13.1"
 nbformat = "^5.8.0"
 seaborn = "^0.12.2"
 jupyter = "^1.0.0"
+folium = "^0.14.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.254"

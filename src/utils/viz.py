@@ -43,7 +43,7 @@ def hourly_overview(
             "Please use 'mean', 'median', 'quantile' or 'max_perc'."
         )
 
-    print(threshold)
+    # print(threshold)
 
     # generate subplots containing four plots
     fig, axes = plt.subplots(2, 2)
@@ -56,6 +56,7 @@ def hourly_overview(
         data=hourly_df,
         showfliers=True,
         color="lightblue",
+        notch=True,
     )
     axes[0, 0].set_title(
         "Distribution of hourly aircraft count by hour of the day"
@@ -77,6 +78,7 @@ def hourly_overview(
         order=weekday_order,
         showfliers=True,
         color="lightblue",
+        notch=True,
     )
     axes[0, 1].set_title(
         "Distribution of hourly aircraft count by day of the week"
@@ -95,6 +97,7 @@ def hourly_overview(
         data=hourly_df,
         showfliers=True,
         color="lightblue",
+        notch=True,
     )
     axes[1, 0].set_title(
         "Distribution of hourly aircraft count by day of the month"
@@ -113,6 +116,7 @@ def hourly_overview(
         data=hourly_df,
         showfliers=True,
         color="lightblue",
+        notch=True,
     )
     axes[1, 1].set_title("Distribution of hourly aircraft count by month")
     axes[1, 1].set_xlabel("Month")
@@ -165,7 +169,7 @@ def yearly_heatmap(
     # update labels
     fig.update_xaxes(title_text="Day of the year")
     fig.update_yaxes(title_text="Hour of the day")
-    fig.update_layout(title_text="Hourly observed aircraft count")
+    fig.update_layout(title_text="Hourly aircraft entry count")
     fig.update_layout(coloraxis_colorbar=dict(title="AC count"))
 
     # update ticks

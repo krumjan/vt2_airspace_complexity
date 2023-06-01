@@ -3,7 +3,9 @@ import math
 import os
 import pickle
 import random
+import multiprocessing as mp
 from pathlib import Path
+from typing import Union, Tuple
 
 import numpy as np
 import pandas as pd
@@ -14,12 +16,11 @@ from tqdm.auto import tqdm
 
 import traffic
 from traffic.core import Traffic
-from typing import Union, Tuple
 
 from utils import adsb as util_adsb
 from utils import geo as util_geo
 from utils import general as util_general
-import multiprocessing as mp
+from utils import viz as viz
 
 
 class airspace:
@@ -48,6 +49,7 @@ class airspace:
             shapely.geometry.polygon.Polygon object and two floats (alt_min, alt_max).
         """
 
+        # if volume is a traffic airspace object
         if type(volume) == traffic.core.airspace.Airspace:
             self.id = id
             self.shape = volume.shape
@@ -60,6 +62,8 @@ class airspace:
             self.alt_min = volume.elements[0].lower
             self.alt_max = volume.elements[-1].upper
 
+        # if volume is a tuple of a shapely polygon and two floats defining the upper
+        # and lower altitude bounds
         else:
             self.id = id
             self.shape = volume[0]
@@ -116,10 +120,10 @@ class airspace:
 
     def preprocess_data(self) -> None:
         """
-        Preprocesses the montly data packages and saves it again as monthly Traffic
-        objects under 'data/cellspace_id/03_preprocessed/monthly' before combining them
-        to one Traffic object under 'data/cellspace_id/03_preprocessed. Preprocessing
-        includes the following steps:
+        Preprocesses the montly data packages and saves it again as preprocessed monthly
+        Traffic objects under 'data/cellspace_id/03_preprocessed/monthly'. Afterwards
+        monthly Traffic objects are combined to one Traffic object which is saved under
+        'data/cellspace_id/03_preprocessed. Preprocessing includes the following steps:
             - assigning an id to each trajectory
             - removing invalid trajectories
             - applying filtering to the trajectories
@@ -179,7 +183,10 @@ class airspace:
             )
 
     def plot(
-        self, traj_sample: bool = False, traj_num: int = 200
+        self,
+        traj_sample: bool = False,
+        traj_num: int = 200,
+        reduced=True,
     ) -> go.Figure:
         """
         Generates a plot of the airspace shape. If the parameter 'traj_sample' is set to
@@ -193,6 +200,10 @@ class airspace:
         traj_num : int, optional
             Amount of trajectories which are plotted if traj_sample is set to True, by
             default 100
+        reduced : bool, optional
+            If set to True, the plot will include sample trajectories that are reduced
+            to the acutal TMA extent and otherwise sample trajectories that span the
+            entire rectangular donwload-boundary, by default True
 
         Returns
         -------
@@ -212,27 +223,25 @@ class airspace:
             margin={"l": 0, "b": 0, "t": 0, "r": 0},
             mapbox_center_lat=self.lat_cen,
             mapbox_center_lon=self.lon_cen,
-            mapbox_zoom=4,
+            mapbox_zoom=7,
         )
-        # Add airspace shape to the plot
-        lons, lats = self.shape.exterior.xy
-        trace = go.Scattermapbox(
-            mode="lines",
-            lat=list(lats),
-            lon=list(lons),
-            line=dict(width=2, color="red"),
-        )
-        fig.add_trace(trace)
 
         # Depending on 'traj_sample', add a sample of trajectories to the plot
         if traj_sample:
             # Define home path and import data
             home_path = util_general.get_project_root()
-            trajs = Traffic.from_file(
-                f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
-            )
-            # Add random sample of trajectories to the plot
+            # Load either reduced or non-reduced trajectories
+            if reduced:
+                trajs = Traffic.from_file(
+                    f"{home_path}/data/{self.id}/"
+                    "03_preprocessed/preprocessed_all_tma.parquet"
+                )
+            else:
+                trajs = Traffic.from_file(
+                    f"{home_path}/data/{self.id}/"
+                    "03_preprocessed/preprocessed_all_rec.parquet"
+                )
+            # Add the random sample of trajectories to the plot
             ids = random.sample(
                 trajs.data["flight_id"].unique().tolist(), traj_num
             )
@@ -242,118 +251,156 @@ class airspace:
                         mode="lines",
                         lat=traj.data["latitude"],
                         lon=traj.data["longitude"],
-                        line=dict(width=2, color="blue"),
+                        line=dict(width=1, color="blue"),
                     )
                 )
 
+        # Add airspace shape to the plot
+        lons, lats = self.shape.exterior.xy
+        trace = go.Scattermapbox(
+            mode="lines",
+            lat=list(lats),
+            lon=list(lons),
+            line=dict(width=4, color="red"),
+        )
+        fig.add_trace(trace)
+
         return fig
 
-    def get_hourly_df(self, return_df: bool = False) -> pd.DataFrame:
-        """
-        Generates a dataframe containing hourly aggregated traffic information of the
-        trajectories in the cell space. The dataframe is saved as a csv file under
-        'data/cellspace_id/04_hourly' and can be returned as a pandas dataframe if
-        'return_df' is set to True.
+    def generate_hourly_df(self, return_df: bool = False) -> pd.DataFrame:
+            """
+            Generates a dataframe containing hourly aggregated traffic information of
+            the trajectories in the airspace. The dataframe is saved as a parquet file
+            under 'data/cellspace_id/04_hourly' and can also directly be returned as a
+            pandas dataframe by the function if 'return_df' is set to True.
 
-        Parameters
-        ----------
-        return_df : bool, optional
-            If True, the dataframe will be returend by the function, by default False
+            Parameters
+            ----------
+            return_df : bool, optional
+                If True, the dataframe will be returend by the function, by default
+                False
+
+            Returns
+            -------
+            pd.DataFrame
+                Dataframe containing the hourly aggregated traffic information. Only 
+                returned if 'return_df' is set to True.
+            """
+
+            # Define home path
+            home_path = util_general.get_project_root()
+
+            # Check if file already exists 
+            check_file = Path(
+                f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+            )
+            # If file does not exist, run process to generate it
+            if check_file.is_file() is False:
+                # Import data
+                trajs = Traffic.from_file(
+                    f"{home_path}/data/{self.id}/"
+                    "03_preprocessed/preprocessed_all_tma.parquet"
+                )
+                # Aggregate data by flight_id, keeping the minimum and maximum timestamp
+                df = trajs.data
+                df = (
+                    df.groupby("flight_id")["timestamp"]
+                    .agg(["min", "max"])
+                    .reset_index()
+                )
+                df = df.rename({"min": "in", "max": "out"}, axis=1)
+                # df["stay_h"] = (df["out"] - df["in"]).dt.total_seconds() / 3600
+                df["timestamp_entered_h"] = df["in"].dt.floor("h")
+                df = df.drop(["in", "out"], axis=1)
+
+                # Aggregate data by hour of entry, keeping the amount of flights and a
+                # list of flight_ids
+                # stay hourly_stay = df.groupby(["timestamp_entered_h"])["stay_h"].sum()
+                hourly_users = df.groupby(["timestamp_entered_h"])[
+                    "flight_id"
+                ].count()
+                hourly_users.name = "ac_count"
+                hourly_ids = df.groupby(["timestamp_entered_h"])[
+                    "flight_id"
+                ].apply(list)
+                hourly_ids.name = "flight_ids"
+                hourly_df = pd.concat(
+                    # [hourly_users, hourly_stay, hourly_ids], axis=1
+                    [hourly_users, hourly_ids],
+                    axis=1,
+                )
+                hourly_df.reset_index(inplace=True)
+                hourly_df = hourly_df.rename(
+                    {"timestamp_entered_h": "hour"}, axis=1
+                )
+
+                # Fill missing hours with count 0
+                hourly_df = (
+                    hourly_df.set_index("hour")
+                    .resample("H")
+                    .asfreq()
+                    .fillna(0)
+                    .reset_index()
+                )
+
+                # Add additional columns containing information about the hour
+                hourly_df["weekday"] = hourly_df["hour"].dt.day_name()
+                hourly_df["month"] = hourly_df["hour"].dt.month
+                hourly_df["hour_of_day"] = hourly_df["hour"].dt.hour + 1
+                hourly_df["day_of_year"] = hourly_df["hour"].dt.dayofyear
+                hourly_df["day_of_month"] = hourly_df["hour"].dt.day
+
+                # rearange columns
+                hourly_df = hourly_df[
+                    [
+                        "hour",
+                        "hour_of_day",
+                        "weekday",
+                        "day_of_month",
+                        "month",
+                        "day_of_year",
+                        "ac_count",
+                        # "stay_h",
+                        "flight_ids",
+                    ]
+                ]
+                # Save dataframe as parquet file
+                if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
+                    os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
+                hourly_df.to_parquet(check_file)
+                # Return dataframe if 'return_df' is set to True
+                if return_df:
+                    hourly_df = pd.read_parquet(check_file)
+                    return hourly_df
+
+            # Return dataframe if 'return_df' is set to True
+            else:
+                if return_df:
+                    hourly_df = pd.read_parquet(check_file)
+                    return hourly_df
+            
+    def hourly_plot(self) -> go.Figure:
+        """
+        Generates a heatmap of the hourly traffic volume of the airspace. Prerequisite
+        to run this function is the existence of a dataframe containing hourly
+        aggregated which is created by the function 'get_hourly_df'.
 
         Returns
         -------
-        pd.DataFrame
-            Dataframe containing the hourly aggregated traffic information
+        go.Figure
+            Plotly figure object containing the heatmap
         """
 
         # Define home path
         home_path = util_general.get_project_root()
-
-        # Check if file already exists and if not, create it
-        check_file = Path(
+        # Load pandas dataframe from parquet file
+        hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
-        if check_file.is_file() is False:
-            # Import data
-            trajs = Traffic.from_file(
-                f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
-            )
-            # Aggregate data by flight_id, keeping the minimum and maximum timestamp
-            df = trajs.data
-            df = (
-                df.groupby("flight_id")["timestamp"]
-                .agg(["min", "max"])
-                .reset_index()
-            )
-            df = df.rename({"min": "in", "max": "out"}, axis=1)
-            # Compute stay time in hours
-            df["stay_h"] = (df["out"] - df["in"]).dt.total_seconds() / 3600
-            df["timestamp_entered_h"] = df["in"].dt.floor("h")
-            df = df.drop(["in", "out"], axis=1)
+        # Create heatmap and return it
+        return viz.yearly_heatmap(hourly_df)
 
-            # Aggregate data by hour, keeping the number of flights and the total stay
-            hourly_stay = df.groupby(["timestamp_entered_h"])["stay_h"].sum()
-            hourly_users = df.groupby(["timestamp_entered_h"])[
-                "flight_id"
-            ].count()
-            hourly_users.name = "ac_count"
-            hourly_ids = df.groupby(["timestamp_entered_h"])[
-                "flight_id"
-            ].apply(list)
-            hourly_ids.name = "flight_ids"
-            hourly_df = pd.concat(
-                [hourly_users, hourly_stay, hourly_ids], axis=1
-            )
-            hourly_df.reset_index(inplace=True)
-            hourly_df = hourly_df.rename(
-                {"timestamp_entered_h": "hour"}, axis=1
-            )
-
-            # Fill missing hours with 0
-            hourly_df = (
-                hourly_df.set_index("hour")
-                .resample("H")
-                .asfreq()
-                .fillna(0)
-                .reset_index()
-            )
-
-            # Add additional columns containing information about the hour
-            hourly_df["weekday"] = hourly_df["hour"].dt.day_name()
-            hourly_df["month"] = hourly_df["hour"].dt.month
-            hourly_df["hour_of_day"] = hourly_df["hour"].dt.hour + 1
-            hourly_df["day_of_year"] = hourly_df["hour"].dt.dayofyear
-            hourly_df["day_of_month"] = hourly_df["hour"].dt.day
-
-            # rearange columns
-            hourly_df = hourly_df[
-                [
-                    "hour",
-                    "hour_of_day",
-                    "weekday",
-                    "day_of_month",
-                    "month",
-                    "day_of_year",
-                    "ac_count",
-                    "stay_h",
-                    "flight_ids",
-                ]
-            ]
-            # Save dataframe as parquet file
-            if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
-                os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
-            hourly_df.to_parquet(check_file)
-            # Return dataframe if 'return_df' is set to True
-            if return_df:
-                hourly_df = pd.read_parquet(check_file)
-                return hourly_df
-
-        # Return dataframe if 'return_df' is set to True
-        else:
-            if return_df:
-                hourly_df = pd.read_parquet(check_file)
-                return hourly_df
+    
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
         # Define home path
