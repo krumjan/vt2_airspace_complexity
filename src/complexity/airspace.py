@@ -268,117 +268,117 @@ class airspace:
         return fig
 
     def generate_hourly_df(self, return_df: bool = False) -> pd.DataFrame:
-            """
-            Generates a dataframe containing hourly aggregated traffic information of
-            the trajectories in the airspace. The dataframe is saved as a parquet file
-            under 'data/cellspace_id/04_hourly' and can also directly be returned as a
-            pandas dataframe by the function if 'return_df' is set to True.
+        """
+        Generates a dataframe containing hourly aggregated traffic information of
+        the trajectories in the airspace. The dataframe is saved as a parquet file
+        under 'data/cellspace_id/04_hourly' and can also directly be returned as a
+        pandas dataframe by the function if 'return_df' is set to True.
 
-            Parameters
-            ----------
-            return_df : bool, optional
-                If True, the dataframe will be returend by the function, by default
-                False
+        Parameters
+        ----------
+        return_df : bool, optional
+            If True, the dataframe will be returend by the function, by default
+            False
 
-            Returns
-            -------
-            pd.DataFrame
-                Dataframe containing the hourly aggregated traffic information. Only 
-                returned if 'return_df' is set to True.
-            """
+        Returns
+        -------
+        pd.DataFrame
+            Dataframe containing the hourly aggregated traffic information. Only
+            returned if 'return_df' is set to True.
+        """
 
-            # Define home path
-            home_path = util_general.get_project_root()
+        # Define home path
+        home_path = util_general.get_project_root()
 
-            # Check if file already exists 
-            check_file = Path(
-                f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+        # Check if file already exists
+        check_file = Path(
+            f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+        )
+        # If file does not exist, run process to generate it
+        if check_file.is_file() is False:
+            # Import data
+            trajs = Traffic.from_file(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_tma.parquet"
             )
-            # If file does not exist, run process to generate it
-            if check_file.is_file() is False:
-                # Import data
-                trajs = Traffic.from_file(
-                    f"{home_path}/data/{self.id}/"
-                    "03_preprocessed/preprocessed_all_tma.parquet"
-                )
-                # Aggregate data by flight_id, keeping the minimum and maximum timestamp
-                df = trajs.data
-                df = (
-                    df.groupby("flight_id")["timestamp"]
-                    .agg(["min", "max"])
-                    .reset_index()
-                )
-                df = df.rename({"min": "in", "max": "out"}, axis=1)
-                # df["stay_h"] = (df["out"] - df["in"]).dt.total_seconds() / 3600
-                df["timestamp_entered_h"] = df["in"].dt.floor("h")
-                df = df.drop(["in", "out"], axis=1)
+            # Aggregate data by flight_id, keeping the minimum and maximum timestamp
+            df = trajs.data
+            df = (
+                df.groupby("flight_id")["timestamp"]
+                .agg(["min", "max"])
+                .reset_index()
+            )
+            df = df.rename({"min": "in", "max": "out"}, axis=1)
+            # df["stay_h"] = (df["out"] - df["in"]).dt.total_seconds() / 3600
+            df["timestamp_entered_h"] = df["in"].dt.floor("h")
+            df = df.drop(["in", "out"], axis=1)
 
-                # Aggregate data by hour of entry, keeping the amount of flights and a
-                # list of flight_ids
-                # stay hourly_stay = df.groupby(["timestamp_entered_h"])["stay_h"].sum()
-                hourly_users = df.groupby(["timestamp_entered_h"])[
-                    "flight_id"
-                ].count()
-                hourly_users.name = "ac_count"
-                hourly_ids = df.groupby(["timestamp_entered_h"])[
-                    "flight_id"
-                ].apply(list)
-                hourly_ids.name = "flight_ids"
-                hourly_df = pd.concat(
-                    # [hourly_users, hourly_stay, hourly_ids], axis=1
-                    [hourly_users, hourly_ids],
-                    axis=1,
-                )
-                hourly_df.reset_index(inplace=True)
-                hourly_df = hourly_df.rename(
-                    {"timestamp_entered_h": "hour"}, axis=1
-                )
+            # Aggregate data by hour of entry, keeping the amount of flights and a
+            # list of flight_ids
+            # stay hourly_stay = df.groupby(["timestamp_entered_h"])["stay_h"].sum()
+            hourly_users = df.groupby(["timestamp_entered_h"])[
+                "flight_id"
+            ].count()
+            hourly_users.name = "ac_count"
+            hourly_ids = df.groupby(["timestamp_entered_h"])[
+                "flight_id"
+            ].apply(list)
+            hourly_ids.name = "flight_ids"
+            hourly_df = pd.concat(
+                # [hourly_users, hourly_stay, hourly_ids], axis=1
+                [hourly_users, hourly_ids],
+                axis=1,
+            )
+            hourly_df.reset_index(inplace=True)
+            hourly_df = hourly_df.rename(
+                {"timestamp_entered_h": "hour"}, axis=1
+            )
 
-                # Fill missing hours with count 0
-                hourly_df = (
-                    hourly_df.set_index("hour")
-                    .resample("H")
-                    .asfreq()
-                    .fillna(0)
-                    .reset_index()
-                )
+            # Fill missing hours with count 0
+            hourly_df = (
+                hourly_df.set_index("hour")
+                .resample("H")
+                .asfreq()
+                .fillna(0)
+                .reset_index()
+            )
 
-                # Add additional columns containing information about the hour
-                hourly_df["weekday"] = hourly_df["hour"].dt.day_name()
-                hourly_df["month"] = hourly_df["hour"].dt.month
-                hourly_df["hour_of_day"] = hourly_df["hour"].dt.hour + 1
-                hourly_df["day_of_year"] = hourly_df["hour"].dt.dayofyear
-                hourly_df["day_of_month"] = hourly_df["hour"].dt.day
+            # Add additional columns containing information about the hour
+            hourly_df["weekday"] = hourly_df["hour"].dt.day_name()
+            hourly_df["month"] = hourly_df["hour"].dt.month
+            hourly_df["hour_of_day"] = hourly_df["hour"].dt.hour + 1
+            hourly_df["day_of_year"] = hourly_df["hour"].dt.dayofyear
+            hourly_df["day_of_month"] = hourly_df["hour"].dt.day
 
-                # rearange columns
-                hourly_df = hourly_df[
-                    [
-                        "hour",
-                        "hour_of_day",
-                        "weekday",
-                        "day_of_month",
-                        "month",
-                        "day_of_year",
-                        "ac_count",
-                        # "stay_h",
-                        "flight_ids",
-                    ]
+            # rearange columns
+            hourly_df = hourly_df[
+                [
+                    "hour",
+                    "hour_of_day",
+                    "weekday",
+                    "day_of_month",
+                    "month",
+                    "day_of_year",
+                    "ac_count",
+                    # "stay_h",
+                    "flight_ids",
                 ]
-                # Save dataframe as parquet file
-                if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
-                    os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
-                hourly_df.to_parquet(check_file)
-                # Return dataframe if 'return_df' is set to True
-                if return_df:
-                    hourly_df = pd.read_parquet(check_file)
-                    return hourly_df
-
+            ]
+            # Save dataframe as parquet file
+            if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
+                os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
+            hourly_df.to_parquet(check_file)
             # Return dataframe if 'return_df' is set to True
-            else:
-                if return_df:
-                    hourly_df = pd.read_parquet(check_file)
-                    return hourly_df
-            
+            if return_df:
+                hourly_df = pd.read_parquet(check_file)
+                return hourly_df
+
+        # Return dataframe if 'return_df' is set to True
+        else:
+            if return_df:
+                hourly_df = pd.read_parquet(check_file)
+                return hourly_df
+
     def hourly_plot(self) -> go.Figure:
         """
         Generates a heatmap of the hourly traffic volume of the airspace. Prerequisite
@@ -400,7 +400,75 @@ class airspace:
         # Create heatmap and return it
         return viz.yearly_heatmap(hourly_df)
 
+    def heatmap_low_hour(
+        self, reference_type: str = "max_perc", reference_value=0.4
+    ) -> go.Figure:
+        """
+        Generates a heatmap-like plot showing the hours classified as low traffic hours.
+        Prerequisite to run this function is the existence of a dataframe containing
+        hourly aggregated which is created by the function 'get_hourly_df'. The
+        threshold for the classification of low traffic hours can be set by the user but
+        is by default set to 40% of the maximum traffic volume.
+
+        Parameters
+        ----------
+        reference_type : str, optional
+            Defines how the low-traffic threshold is defined. Can be either mean,
+            median, quantile or max_perc, by default "max_perc"
+        reference_value : float, optional
+            For reference types quantile or max_perc this value defines the the value,
+            ex. 0.4 for the 40th percentile or 40% of max traffic volume, by default 0.4
+
+        Returns
+        -------
+        go.Figure
+            heatmpa-like plot showing the hours classified as low traffic hours
+        """
+        # Define home path
+        home_path = util_general.get_project_root()
+        # Load pandas dataframe from parquet file
+        hourly_df = pd.read_parquet(
+            f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+        )
+        # Create plot and return it
+        return viz.heatmap_low_hour(hourly_df, reference_type, reference_value)
+
+    def low_hour_overview(
+        self, reference_type: str = "max_perc", reference_value=0.4
+    ) -> go.Figure:
+        """
+        Generates a plot containing four multiple boxplots showing the distribution of
+        hourly traffic volume grouped by hour of day, day of week, day of month and
+        month. In each plot a horizontal line is drawn to indicate the threshold for
+        low-traffic hours. Prerequisite to run this function is the existence of a
+        dataframe containing hourly aggregated which is created by the function
+        'get_hourly_df'. The threshold for the classification of low traffic hours can
+        be set by the user but is by default set to 40% of the maximum traffic volume.
+
+        Parameters
+        ----------
+        reference_type : str, optional
+            Defines how the low-traffic threshold is defined. Can be either mean,
+            median, quantile or max_perc, by default "max_perc"
+        reference_value : float, optional
+            For reference types quantile or max_perc this value defines the the value,
+            ex. 0.4 for the 40th percentile or 40% of max traffic volume, by default 0.4
+
+        Returns
+        -------
+        go.Figure
+            Plotly figure object containing the four multiple boxplots
+        """
+        # Define home path
+        home_path = util_general.get_project_root()
+        # Load pandas dataframe from parquet file
+        hourly_df = pd.read_parquet(
+            f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+        )
+        # Create plot and return it
+        return viz.hourly_overview(hourly_df, reference_type, reference_value)
     
+
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
         # Define home path
