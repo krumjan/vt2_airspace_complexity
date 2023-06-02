@@ -60,7 +60,7 @@ class airspace:
             self.lat_cen = volume.shape.centroid.y
             self.lon_cen = volume.shape.centroid.x
             self.alt_min = volume.elements[0].lower
-            self.alt_max = volume.elements[-1].upper
+            self.alt_max = min(volume.elements[-1].upper, 45000)
 
         # if volume is a tuple of a shapely polygon and two floats defining the upper
         # and lower altitude bounds
@@ -76,7 +76,7 @@ class airspace:
             self.lat_cen = self.shape.centroid.y
             self.lon_cen = self.shape.centroid.x
             self.alt_min = alt_lo
-            self.alt_max = alt_up
+            self.alt_max = min(alt_up, 45000)
 
     def fetch_data(
         self,
@@ -433,7 +433,7 @@ class airspace:
         # Create plot and return it
         return viz.heatmap_low_hour(hourly_df, reference_type, reference_value)
 
-    def low_hour_overview(
+    def hourly_boxplots(
         self, reference_type: str = "max_perc", reference_value=0.4
     ) -> go.Figure:
         """
