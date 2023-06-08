@@ -346,16 +346,16 @@ def cumulative_distribution(
         line_width=1.5,
         line_dash="dash",
         line_color="red",
-        annotation_text="Threshold",
-        annotation_position="bottom",
+        annotation_text="Threshold value",
+        annotation_position="bottom right",
     )
     fig.add_hline(
         y=quantile,
         line_width=1.5,
         line_dash="dash",
         line_color="red",
-        annotation_text="left",
-        annotation_position="left",
+        # annotation_text="left",
+        # annotation_position="top left",
     )
 
     # Improve readability
