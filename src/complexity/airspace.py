@@ -5,10 +5,11 @@ import pickle
 import random
 import multiprocessing as mp
 from pathlib import Path
-from typing import Union, Tuple
+from typing import Union
 
 import numpy as np
 import pandas as pd
+import plotly
 import plotly.graph_objects as go
 import shapely
 from shapely.geometry import Point
@@ -154,9 +155,8 @@ class airspace:
                 recursive=True,
             )
             # Read all files and combine them to one dataframe
-            all_df = pd.DataFrame()
-            for file in tqdm(files):
-                all_df = pd.concat([all_df, Traffic.from_file(file).data])
+            dfs = [Traffic.from_file(file).data for file in tqdm(files)]
+            all_df = pd.concat(dfs)
             # Save combined dataframe as Traffic object
             Traffic(all_df).to_parquet(
                 f"{home_path}/data/{self.id}/"
@@ -467,8 +467,39 @@ class airspace:
         )
         # Create plot and return it
         return viz.hourly_overview(hourly_df, reference_type, reference_value)
-    
 
+    def hourly_cdf(
+        self, reference_type: str = "max_perc", reference_value: float = 0.4
+    ) -> plotly.graph_objs._figure.Figure:
+        """
+        returns a cumulative distribution plot of the hourly entry counts of the
+        airspace instance. The function returns a plotly figure. The threshold can be
+        set using the reference type and value and is also indicated in the plot.
+
+        Parameters
+        ----------
+        reference_type : str
+            Reference type to use for the threshold. Can be 'mean', 'median', 'quantile'
+            or 'max_perc'.
+        reference_value : float, optional
+            For type quantile the quantile to use and for type max_perc the percentage
+            of the max observed hourly count to use as threshold, by default 0.5
+
+        Returns
+        -------
+        plotly.graph_objs._figure.Figure
+            A plot of the cumulative distribution of the hourly entry counts with lines
+            representing the threshold value.
+        """
+
+        # Define home path
+        home_path = util_general.get_project_root()
+        # Load pandas dataframe from parquet file
+        hourly_df = pd.read_parquet(
+            f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
+        )
+        # Create heatmap and return it
+        return viz.cumulative_distribution(hourly_df, "max_perc", 0.4)
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
         # Define home path

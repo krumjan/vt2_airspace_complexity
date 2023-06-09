@@ -285,10 +285,10 @@ def cumulative_distribution(
     hourly_df: pd.DataFrame,
     reference_type: str = None,
     reference_value: float = 0.5,
-):
+) -> plotly.graph_objs._figure.Figure:
     """
     Generate a cumulative distribution plot of the hourly entry counts. The function
-    returns a matplotlib figure. The threshold can be set using the reference type and
+    returns a plotly figure. The threshold can be set using the reference type and
     value and is also indicated in the plot.
 
     Parameters
@@ -305,8 +305,9 @@ def cumulative_distribution(
 
     Returns
     -------
-    matplotlib.figure.Figure
-        A plot of the cumulative distribution of the hourly entry counts.
+    plotly.graph_objs._figure.Figure
+        A plot of the cumulative distribution of the hourly entry counts with lines
+        representing the threshold value.
 
     Raises
     ------
@@ -354,8 +355,6 @@ def cumulative_distribution(
         line_width=1.5,
         line_dash="dash",
         line_color="red",
-        # annotation_text="left",
-        # annotation_position="top left",
     )
 
     # Improve readability
@@ -363,4 +362,5 @@ def cumulative_distribution(
     fig.update_xaxes(title_text="Hourly aircraft entry count")
     fig.update_yaxes(title_text="Cumulative probability")
 
+    # Return the figure
     return fig
