@@ -466,7 +466,7 @@ class airspace:
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
         # Create plot and return it
-        return viz.hourly_overview(hourly_df, reference_type, reference_value)
+        return viz.hourly_boxplots(hourly_df, reference_type, reference_value)
 
     def hourly_cdf(
         self, reference_type: str = "max_perc", reference_value: float = 0.4

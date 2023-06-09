@@ -45,6 +45,7 @@ def yearly_heatmap(
     fig.update_yaxes(title_text="Hour of the day")
     fig.update_layout(title_text="Hourly aircraft entry count")
     fig.update_layout(coloraxis_colorbar=dict(title="entry count"))
+    fig.update_layout(margin=dict(l=110, r=50, b=0, t=35), title_x=0.5)
 
     # update ticks
     fig.update_xaxes(tickmode="linear", tick0=0, dtick=10)
@@ -139,27 +140,35 @@ def heatmap_low_hour(
         )
     )
 
-    # Adjust axis ranges, ticks and labels
+    # Improve readability
     fig.update_xaxes(range=[0.5, 365.5])
     fig.update_yaxes(range=[0.5, 24.5])
     fig.update_layout(legend={"itemsizing": "constant"})
     fig.update_layout(legend_title_text="Low-traffic hour")
-    fig.update_layout(title_text="Distribution of low traffic hours")
+    fig.update_layout(
+        title_text="   Distribution of low traffic hours", title_x=0.5
+    )
     fig.update_xaxes(title_text="Day of the year")
     fig.update_yaxes(title_text="Hour of the day")
     fig.update_xaxes(tickmode="linear", tick0=0, dtick=10)
     fig.update_yaxes(tickmode="linear", tick0=0, dtick=1)
+    fig.update_layout(margin=dict(l=110, r=50, b=0, t=35))
 
     return fig
 
 
-def hourly_overview(
+def hourly_boxplots(
     hourly_df: pd.DataFrame,
     reference_type: str = None,
     reference_value: float = 0.5,
 ) -> plotly.graph_objs._figure.Figure:
     """
-    Generate a plotly figure showing the distribution of hourly aircraft count .
+    Generate a plotly figure showing the distribution of hourly aircraft count for the
+    data separated by hour of the day, day of the week, day of the month and month. The
+    returned figure contains four subplots, each showing the distribution of the hourly
+    aircraft count for the data separated by one of the four variables as a multiple
+    boxplot. The threshold for low traffic hours can be set by trough the reference_type
+    and reference_value parameters.
 
     Parameters
     ----------
@@ -264,18 +273,21 @@ def hourly_overview(
         color="lightblue",
         notch=True,
     )
+
+    # Add a horizontal line to indicate the threshold
+    if reference_type is not None:
+        axes[0, 0].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[0, 1].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[1, 0].axhline(threshold, ls="--", color="red", linewidth=1)
+        axes[1, 1].axhline(threshold, ls="--", color="red", linewidth=1)
+
+    # Set the figure layout
     axes[1, 1].set_title("Distribution of hourly aircraft count by month")
     axes[1, 1].set_xlabel("Month")
     axes[1, 1].set_ylabel("Hourly aircraft count")
     axes[1, 1].grid(
         axis="y", color="gray", linestyle="--", linewidth=0.5, alpha=0.5
     )
-
-    if reference_type is not None:
-        axes[0, 0].axhline(threshold, ls="--", color="red", linewidth=1)
-        axes[0, 1].axhline(threshold, ls="--", color="red", linewidth=1)
-        axes[1, 0].axhline(threshold, ls="--", color="red", linewidth=1)
-        axes[1, 1].axhline(threshold, ls="--", color="red", linewidth=1)
 
     # Return the figure
     return fig
@@ -358,9 +370,10 @@ def cumulative_distribution(
     )
 
     # Improve readability
-    fig.update_layout(margin=dict(l=0, r=20, b=0, t=35))
+    fig.update_layout(margin=dict(l=0, r=50, b=0, t=35))
     fig.update_xaxes(title_text="Hourly aircraft entry count")
     fig.update_yaxes(title_text="Cumulative probability")
+    fig.update_layout(title_x=0.5)
 
     # Return the figure
     return fig
