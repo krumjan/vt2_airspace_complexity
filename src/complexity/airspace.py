@@ -147,6 +147,7 @@ class airspace:
         check_file = Path(
             f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_rec.parquet"
         )
+
         # If file does not exist, combine data
         if check_file.is_file() is False:
             # Get all monthly files
@@ -168,6 +169,7 @@ class airspace:
         check_file = Path(
             f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_tma.parquet"
         )
+
         # If file does not exist, crop data
         if check_file.is_file() is False:
             trajs = Traffic.from_file(
@@ -309,13 +311,10 @@ class airspace:
                 .reset_index()
             )
             df = df.rename({"min": "in", "max": "out"}, axis=1)
-            # df["stay_h"] = (df["out"] - df["in"]).dt.total_seconds() / 3600
             df["timestamp_entered_h"] = df["in"].dt.floor("h")
             df = df.drop(["in", "out"], axis=1)
-
             # Aggregate data by hour of entry, keeping the amount of flights and a
             # list of flight_ids
-            # stay hourly_stay = df.groupby(["timestamp_entered_h"])["stay_h"].sum()
             hourly_users = df.groupby(["timestamp_entered_h"])[
                 "flight_id"
             ].count()
@@ -325,7 +324,6 @@ class airspace:
             ].apply(list)
             hourly_ids.name = "flight_ids"
             hourly_df = pd.concat(
-                # [hourly_users, hourly_stay, hourly_ids], axis=1
                 [hourly_users, hourly_ids],
                 axis=1,
             )
@@ -333,7 +331,6 @@ class airspace:
             hourly_df = hourly_df.rename(
                 {"timestamp_entered_h": "hour"}, axis=1
             )
-
             # Fill missing hours with count 0
             hourly_df = (
                 hourly_df.set_index("hour")
@@ -342,14 +339,12 @@ class airspace:
                 .fillna(0)
                 .reset_index()
             )
-
             # Add additional columns containing information about the hour
             hourly_df["weekday"] = hourly_df["hour"].dt.day_name()
             hourly_df["month"] = hourly_df["hour"].dt.month
             hourly_df["hour_of_day"] = hourly_df["hour"].dt.hour + 1
             hourly_df["day_of_year"] = hourly_df["hour"].dt.dayofyear
             hourly_df["day_of_month"] = hourly_df["hour"].dt.day
-
             # rearange columns
             hourly_df = hourly_df[
                 [
@@ -377,7 +372,7 @@ class airspace:
                 hourly_df = pd.read_parquet(check_file)
                 return hourly_df
 
-        # Return dataframe if 'return_df' is set to True
+        # If file aready existrs, return it if 'return_df' is set to True
         else:
             if return_df:
                 hourly_df = pd.read_parquet(check_file)
@@ -397,10 +392,12 @@ class airspace:
 
         # Define home path
         home_path = util_general.get_project_root()
+
         # Load pandas dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
+
         # Create heatmap and return it
         return viz.yearly_heatmap(hourly_df)
 
@@ -430,10 +427,12 @@ class airspace:
         """
         # Define home path
         home_path = util_general.get_project_root()
+
         # Load pandas dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
+
         # Create plot and return it
         return viz.heatmap_low_hour(hourly_df, reference_type, reference_value)
 
@@ -465,10 +464,12 @@ class airspace:
         """
         # Define home path
         home_path = util_general.get_project_root()
+
         # Load pandas dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
+
         # Create plot and return it
         return viz.hourly_boxplots(hourly_df, reference_type, reference_value)
 
@@ -498,14 +499,41 @@ class airspace:
 
         # Define home path
         home_path = util_general.get_project_root()
+
         # Load pandas dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
+
         # Create heatmap and return it
         return viz.cumulative_distribution(hourly_df, "max_perc", 0.4)
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
+        """
+        Generates a set of trajectories that only contains the low traffic hours. The
+        threshold for the classification of low traffic hours can be set by the user
+        trough the reference type and value. Prerequisite to run this function is the
+        existence of a dataframe containing hourly aggregated which is created by the
+        function 'get_hourly_df'.
+
+        Parameters
+        ----------
+        reference_type : str
+            reference type to use for the threshold. Can be 'mean', 'median', 'quantile'
+            or 'max_perc'.
+        reference_value : float
+            For type quantile the quantile to use and for type max_perc the percentage
+            of the max observed hourly count to use as threshold
+
+        Raises
+        ------
+        Exception
+            Raised if the required trajectory file does not exits
+        Exception
+            Raised if the required hourly dataframe does not exits
+        ValueError
+            Raised if the reference type is not one of the allowed types
+        """
         # Define home path
         home_path = util_general.get_project_root()
 
@@ -590,6 +618,94 @@ class airspace:
             trajs_tma_low.to_parquet(
                 f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
             )
+
+    def simulation_trajs(
+        self,
+        duration: int = 24,
+        interval: int = 60,
+        start_time: str = "2000-01-01 00:00:00",
+    ) -> pd.DataFrame:
+        """
+        Simulates a single run of the airspace simulation and returns a dataframe
+        containing a set of randomly sampled trajectories and simulation timestamps
+        according to the specified parameters.
+
+        Parameters
+        ----------
+        duration : int, optional
+            duration of the simulation in hours, by default 24
+        interval : int, optional
+            interval in seconds between flights entering the airspace, by default 60
+        start_time : str, optional
+            starting time of the simulation. Used to generate and assign simulation
+            timestamps, by default "2000-01-01 00:00:00"
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe containing a set of randomly sampled trajectories and simulation
+            timestamps according to the specified parameters.
+        """
+
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Load trajectory data and generate flight id list and dataframe
+        trajs_low = Traffic.from_file(
+            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_tma_low.parquet"
+        )
+        ids = trajs_low.flight_ids
+        trajs_low_data = trajs_low.data
+        grouped = trajs_low_data.groupby("flight_id")
+
+        # Determine simulation duration in seconds and amount of sim-trajectories
+        totalseconds = duration * 60 * 60
+        amount_deploys = int(totalseconds / interval)
+
+        # Generate list of injection timestamps
+        timelist = []
+        timer = 0
+        for i in range(int(amount_deploys)):
+            timelist.append(
+                pd.Timestamp(start_time) + pd.Timedelta(seconds=timer)
+            )
+            timer = timer + interval
+        times = np.array(timelist)
+
+        # Generate list of random flight ids
+        indices = np.random.default_rng().choice(
+            len(ids), len(timelist), replace=True
+        )
+        ids = np.array(ids)[indices]
+
+        # Generate list of simulated trajectories
+        df_all = []
+        for id, tm in zip(ids, times):
+            temp = grouped.get_group(id)
+            timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
+            new_timestamp = tm + timedelta
+            timestring = str(new_timestamp.iloc[0].time())
+            flight_id = temp["flight_id"].iloc[0]
+            temp = temp[["latitude", "longitude", "altitude", "icao24"]]
+            temp.insert(0, "timestamp", new_timestamp)
+            temp.insert(1, "flight_id", flight_id + "_" + timestring)
+            df_all.append(temp)
+
+        # Concatenate trajectories and sort by timestamp
+        df_traf = (
+            pd.concat(df_all, axis=0)
+            .sort_values(by=["timestamp"])
+            .reset_index()
+        )
+
+        # Crop trajectories longer than the simulation duration
+        df_traf = df_traf[
+            df_traf.timestamp
+            <= (pd.Timestamp(start_time) + pd.Timedelta(hours=duration))
+        ]
+
+        # Return trajectories
+        return df_traf
 
     def generate_cells(self, dim: int = 20, alt_diff: int = 3000) -> None:
         """
@@ -702,6 +818,7 @@ class airspace:
                     name="Rectangle",
                 )
             )
+
         # Add airspace shape to the plot
         lons, lats = self.shape.exterior.xy
         trace = go.Scattermapbox(
@@ -723,156 +840,41 @@ class airspace:
                 + f" -> {level[0]}ft - {level[1]}ft"
             )
 
-    def run_simulation(
+    def single_simulation_run(
         self,
-        duration: int = 24,
-        interval: int = 60,
-        start_time: str = "2000-01-01 00:00:00",
-    ) -> pd.DataFrame:
+        args,
+    ) -> None:
         """_summary_
 
         Parameters
         ----------
-        duration : int, optional
-            _description_, by default 24
-        interval : int, optional
-            _description_, by default 60
-        start_time : _type_, optional
-            _description_, by default pd.Timestamp("2000-01-01 00:00:00")
-
-        Returns
-        -------
-        pd.DataFrame
+        args : _type_
             _description_
         """
+        # Unpack arguments
+        (
+            num,
+            duration,
+            interval,
+        ) = args
 
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load trajectory data and generate flight id list and dataframe
-        trajs_low = Traffic.from_file(
-            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_tma_low.parquet"
-        )
-        ids = trajs_low.flight_ids
-        trajs_low_data = trajs_low.data
-        grouped = trajs_low_data.groupby("flight_id")
+        # Generate set of simulation trajectories
+        df_traf = self.simulation_trajs(duration, interval)
 
-        # Determine simulation duration in seconds and amount of sim-trajectories
-        totalseconds = duration * 60 * 60
-        amount_deploys = int(totalseconds / interval)
+        # If grid for airspace does not exist, generate it
+        if not hasattr(self, "grid"):
+            self.generate_cells(dim=5, alt_diff=1000)
 
-        # Generate list of injection timestamps
-        timelist = []
-        timer = 0
-        for i in range(int(amount_deploys)):
-            timelist.append(
-                pd.Timestamp(start_time) + pd.Timedelta(seconds=timer)
-            )
-            timer = timer + interval
-        times = np.array(timelist)
-
-        # Generate list of random flight ids
-        indices = np.random.default_rng().choice(
-            len(ids), len(timelist), replace=True
-        )
-        ids = np.array(ids)[indices]
-
-        # Generate list of simulated trajectories
-        df_all = []
-        for id, tm in zip(ids, times):
-            temp = grouped.get_group(id)
-            timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
-            new_timestamp = tm + timedelta
-            timestring = str(new_timestamp.iloc[0].time())
-            flight_id = temp["flight_id"].iloc[0]
-            temp = temp[["latitude", "longitude", "altitude", "icao24"]]
-            temp.insert(0, "timestamp", new_timestamp)
-            temp.insert(1, "flight_id", flight_id + "_" + timestring)
-            df_all.append(temp)
-
-        # Concatenate trajectories and sort by timestamp
-        df_traf = (
-            pd.concat(df_all, axis=0)
-            .sort_values(by=["timestamp"])
-            .reset_index()
-        )
-        df_traf = df_traf[
-            df_traf.timestamp
-            <= (pd.Timestamp(start_time) + pd.Timedelta(hours=duration))
-        ]
-
-        # Return trajectories
-        return df_traf
-
-    def run_simulation_2(
-        self,
-        # num: int,
-        args,
-    ) -> None:
-        # Define home path
-        home_path = util_general.get_project_root()
-
-        num, duration, interval = args
-
-        # Load data and get ids and dataframe
-        trajs_low = Traffic.from_file(
-            f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
-        )
-        ids = trajs_low.flight_ids
-        trajs_low_data = trajs_low.data
-
-        totalseconds = duration * 60 * 60
-        amount_deploys = int(totalseconds / interval)
-
-        timelist = []
-
-        timer = 0
-        for i in range(int(amount_deploys)):
-            timelist.append(timer)
-            timer = timer + interval
-
-        indices = np.random.default_rng().choice(
-            len(ids), len(timelist), replace=True
-        )
-
-        random_ids = np.array(ids)[indices]
-        random_times = np.array(timelist)
-
-        grouped = trajs_low_data.groupby("flight_id")
-
-        # generate simulated trajectories
-        # print("Generating simulated trajectories...")
-        df_all = []
-        start_time = pd.Timestamp("2000-01-01 00:00:00")
-
-        for id, tm in zip(random_ids, random_times):
-            traj_time = start_time + pd.Timedelta(seconds=tm)
-            temp = grouped.get_group(id)
-            timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
-            new_timestamp = traj_time + timedelta
-            timestring = str(new_timestamp.iloc[0].time())
-            flight_id = temp["flight_id"].iloc[0]
-            temp = temp[["latitude", "longitude", "altitude", "icao24"]]
-            temp.insert(0, "timestamp", new_timestamp)
-            temp.insert(1, "flight_id", flight_id + "_" + timestring)
-            df_all.append(temp)
-
-        df_traf = (
-            pd.concat(df_all, axis=0)
-            .sort_values(by=["timestamp"])
-            .reset_index()
-        )
-        # if not os.path.exists(f"{home_path}/data/{self.id}/06_simulation/"):
-        #     os.makedirs(f"{home_path}/data/{self.id}/06_simulation/")
-        # df_traf.to_parquet(
-        #     f"{home_path}/data/{self.id}/06_simulation/trajs_simulation.parquet",
-        #     index=False,
-        # )
-
+        # Initialise results dictionary and counter
         results = {}
         total_count = 0
 
+        # Iterate over cubes of airspace grid
         for cube in self.cubes:
+            # Subset dataframe to only include flights within the cube
             subset = df_traf.loc[
                 (df_traf["latitude"] >= cube.lat_min)
                 & (df_traf["latitude"] <= cube.lat_max)
@@ -881,45 +883,41 @@ class airspace:
                 & (df_traf["altitude"] >= cube.alt_low)
                 & (df_traf["altitude"] <= cube.alt_high)
             ]
-            # subset.to_parquet(
-            #     f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_trajs.parquet",
-            #     index=False,
-            # )
 
+            # Group flights by flight ID and find entry and exit timestamps
             in_out = (
                 subset.groupby("flight_id")["timestamp"]
                 .agg(["min", "max"])
                 .reset_index()
                 .sort_values(by="min")
             )
-            # in_out.to_parquet(
-            #     f"{home_path}/data/{self.id}/07_cube_data/{cube.id}_inout.parquet",
-            #     index=False,
-            # )
 
-            df = in_out
-
-            count = 0
-            # pairs = []
-
-            # Create a dictionary of flights indexed by their max value
+            # Create a dictionary containing the exit timestamp as key and a list of
+            # the corresponding flight IDs exiting at that timestamp as value
             flight_dict = {
-                flight.max: [flight.flight_id] for flight in df.itertuples()
+                flight.max: [flight.flight_id]
+                for flight in in_out.itertuples()
             }
 
+            # Set counter for cube to zero
             count = 0
-            for flight in df.itertuples():
+            # Iterate over flights in cube
+            for flight in in_out.itertuples():
                 matches = []
+                # Using the dict, that are within the cube at the same time
                 for other_flight in flight_dict.get(flight.min, []):
                     if (
                         flight.max
-                        > df.loc[
-                            df["flight_id"] == other_flight, "min"
+                        > in_out.loc[
+                            in_out["flight_id"] == other_flight, "min"
                         ].values[0]
                     ):
+                        # for each flight in the cube at the same time, append to list
+                        # and increase counter
                         matches.append(other_flight)
                         count += 1
 
+            # Update results (count for cube and total count)
             results[cube.id] = count
             total_count += count
 
@@ -949,7 +947,7 @@ class airspace:
         ) as fp:
             pickle.dump(total_count, fp)
 
-    def parallel_simulation_run(
+    def monte_carlo_run(
         self,
         duration: int,
         interval: int,
@@ -985,7 +983,7 @@ class airspace:
                 tqdm(
                     pool.imap(
                         # run the simulation function in parallel processes
-                        self.run_simulation,
+                        self.single_simulation_run,
                         [
                             (i, duration, interval)
                             for i in range(start_num, start_num + runs)
