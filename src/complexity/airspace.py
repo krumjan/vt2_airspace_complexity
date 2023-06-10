@@ -364,6 +364,10 @@ class airspace:
                     "flight_ids",
                 ]
             ]
+            # Convert flight_ids to list (for cases with no flights in the hour)
+            hourly_df["flight_ids"] = hourly_df["flight_ids"].apply(
+                lambda x: [] if x == 0 else x
+            )
             # Save dataframe as parquet file
             if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
                 os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
@@ -720,6 +724,87 @@ class airspace:
             )
 
     def run_simulation(
+        self,
+        duration: int = 24,
+        interval: int = 60,
+        start_time: str = "2000-01-01 00:00:00",
+    ) -> pd.DataFrame:
+        """_summary_
+
+        Parameters
+        ----------
+        duration : int, optional
+            _description_, by default 24
+        interval : int, optional
+            _description_, by default 60
+        start_time : _type_, optional
+            _description_, by default pd.Timestamp("2000-01-01 00:00:00")
+
+        Returns
+        -------
+        pd.DataFrame
+            _description_
+        """
+
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Load trajectory data and generate flight id list and dataframe
+        trajs_low = Traffic.from_file(
+            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_tma_low.parquet"
+        )
+        ids = trajs_low.flight_ids
+        trajs_low_data = trajs_low.data
+        grouped = trajs_low_data.groupby("flight_id")
+
+        # Determine simulation duration in seconds and amount of sim-trajectories
+        totalseconds = duration * 60 * 60
+        amount_deploys = int(totalseconds / interval)
+
+        # Generate list of injection timestamps
+        timelist = []
+        timer = 0
+        for i in range(int(amount_deploys)):
+            timelist.append(
+                pd.Timestamp(start_time) + pd.Timedelta(seconds=timer)
+            )
+            timer = timer + interval
+        times = np.array(timelist)
+
+        # Generate list of random flight ids
+        indices = np.random.default_rng().choice(
+            len(ids), len(timelist), replace=True
+        )
+        ids = np.array(ids)[indices]
+
+        # Generate list of simulated trajectories
+        df_all = []
+        for id, tm in zip(ids, times):
+            temp = grouped.get_group(id)
+            timedelta = temp["timestamp"] - temp["timestamp"].iloc[0]
+            new_timestamp = tm + timedelta
+            timestring = str(new_timestamp.iloc[0].time())
+            flight_id = temp["flight_id"].iloc[0]
+            temp = temp[["latitude", "longitude", "altitude", "icao24"]]
+            temp.insert(0, "timestamp", new_timestamp)
+            temp.insert(1, "flight_id", flight_id + "_" + timestring)
+            df_all.append(temp)
+
+        # Concatenate trajectories and sort by timestamp
+        df_traf = (
+            pd.concat(df_all, axis=0)
+            .sort_values(by=["timestamp"])
+            .reset_index()
+        )
+        df_traf = df_traf[
+            df_traf.timestamp
+            <= (pd.Timestamp(start_time) + pd.Timedelta(hours=duration))
+        ]
+
+        # Return trajectories
+        return df_traf
+
+    def run_simulation_2(
         self,
         # num: int,
         args,
