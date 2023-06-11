@@ -842,14 +842,23 @@ class airspace:
 
     def single_simulation_run(
         self,
-        args,
+        args: tuple,
     ) -> None:
         """_summary_
 
         Parameters
         ----------
-        args : _type_
-            _description_
+        args : tuple
+            Tuple containing the following simulation parameters as arguments:
+            - num: int
+                Identifier for the simulation run. Mainly used for the parallel
+                execution of this function to save results in separate identifiable
+                files.
+            - duration: int
+                Simulation duration in hours.
+            - interval: int
+                Injection interval (time interval between flights entering the airspace)
+                in seconds.
         """
         # Unpack arguments
         (
@@ -901,10 +910,11 @@ class airspace:
 
             # Set counter for cube to zero
             count = 0
-            # Iterate over flights in cube
+            # Iterate over flights and find overlaps of time spent in the cube
             for flight in in_out.itertuples():
                 matches = []
-                # Using the dict, that are within the cube at the same time
+                # Using the dict, find flights that that are within the cube at the same
+                # time
                 for other_flight in flight_dict.get(flight.min, []):
                     if (
                         flight.max
@@ -921,7 +931,8 @@ class airspace:
             results[cube.id] = count
             total_count += count
 
-        # save dictionary results
+        # Save results for each cube of the gird packed in a dictionary. First check if
+        # directory exists, if not create it
         if not os.path.exists(
             f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
         ):
@@ -929,12 +940,14 @@ class airspace:
                 f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/{num}_results.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/\
+                {num}_results.pkl",
             "wb",
         ) as fp:
             pickle.dump(results, fp)
 
-        # save total count
+        # Save the total count of occurences also as a pickle file. First check if
+        # directory exists, if not create it
         if not os.path.exists(
             f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
         ):
@@ -942,7 +955,8 @@ class airspace:
                 f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/{num}_total_count.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/\
+                {num}_total_count.pkl",
             "wb",
         ) as fp:
             pickle.dump(total_count, fp)
@@ -982,7 +996,8 @@ class airspace:
                 # tqdm to show progress
                 tqdm(
                     pool.imap(
-                        # run the simulation function in parallel processes
+                        # run the simulation function in parallel processes accordint to
+                        # set parameters
                         self.single_simulation_run,
                         [
                             (i, duration, interval)
