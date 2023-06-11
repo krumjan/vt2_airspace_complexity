@@ -934,14 +934,16 @@ class airspace:
         # Save results for each cube of the gird packed in a dictionary. First check if
         # directory exists, if not create it
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_cube_counts/"
         ):
             os.makedirs(
-                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/"
+                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+                f"/runs_cube_counts/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/cubes/\
-                {num}_results.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_cube_counts/{num}_results.pkl",
             "wb",
         ) as fp:
             pickle.dump(results, fp)
@@ -949,14 +951,16 @@ class airspace:
         # Save the total count of occurences also as a pickle file. First check if
         # directory exists, if not create it
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_total_counts/"
         ):
             os.makedirs(
-                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/"
+                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+                f"/runs_total_counts/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/total/\
-                {num}_total_count.pkl",
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_total_counts/{num}_total_count.pkl",
             "wb",
         ) as fp:
             pickle.dump(total_count, fp)
@@ -1007,6 +1011,64 @@ class airspace:
                     total=runs,
                 )
             )
+
+        # Generate aggregated results for all simulation runs
+
+        # define home path
+        home_path = util_general.get_project_root()
+
+        # 1. List of all total counts
+        # Get list of all total run counts
+        folder_path = (
+            "/cluster/home/krum/github/VT2_airspace_complexity/data/LSAGUAC/"
+            "08_monte_carlo/5_20/runs_total_counts"
+        )
+        file_list = os.listdir(folder_path)
+
+        # Read values from all files and aggregate in list
+        total_counts = []
+        for file in file_list:
+            with open(folder_path + "/" + file, "rb") as f:
+                total_counts.append(pickle.load(f))
+
+        # Save aggregated list as pickle file
+        with open(
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/total_counts_aggregated.pkl",
+            "wb",
+        ) as fp:
+            pickle.dump(total_counts, fp)
+
+        # 2. Dictionary with list of counts for each cube
+        # Get list of all dictionaries with counts for each cube for each run
+        folder_path = (
+            "/cluster/home/krum/github/VT2_airspace_complexity/data/LSAGUAC"
+            "/08_monte_carlo/5_20/runs_cube_counts"
+        )
+        file_list = os.listdir(folder_path)
+
+        # Read dictionaries from all files and aggregate in list
+        dictionaries = []
+        for file in file_list:
+            with open(folder_path + "/" + file, "rb") as f:
+                dictionaries.append(pickle.load(f))
+
+        # Aggregate dictionaries in one dictionary
+        aggregated_dict = {}
+        for dictionary in dictionaries:
+            for key, value in dictionary.items():
+                if key in aggregated_dict:
+                    aggregated_dict[key].append(value)
+                else:
+                    aggregated_dict[key] = [value]
+
+        # Save aggregated dictionary as pickle file
+        with open(
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/cube_counts_aggregated.pkl",
+            "wb",
+        ) as fp:
+            pickle.dump(aggregated_dict, fp)
 
 
 class cube:
