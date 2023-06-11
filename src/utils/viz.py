@@ -372,7 +372,7 @@ def cumulative_distribution(
     # Improve readability
     fig.update_layout(margin=dict(l=0, r=50, b=0, t=35))
     fig.update_xaxes(title_text="Hourly aircraft entry count")
-    fig.update_yaxes(title_text="Cumulative probability")
+    fig.update_yaxes(title_text="Proportion of total hours")
     fig.update_layout(title_x=0.5)
 
     # Return the figure
