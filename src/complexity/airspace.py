@@ -1021,8 +1021,8 @@ class airspace:
         # 1. List of all total counts
         # Get list of all total run counts
         folder_path = (
-            "/cluster/home/krum/github/VT2_airspace_complexity/data/{self.id}/"
-            "08_monte_carlo/{duration}_{interval}/runs_total_counts"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_total_counts"
         )
         file_list = os.listdir(folder_path)
 
@@ -1043,8 +1043,8 @@ class airspace:
         # 2. Dictionary with list of counts for each cube
         # Get list of all dictionaries with counts for each cube for each run
         folder_path = (
-            "/cluster/home/krum/github/VT2_airspace_complexity/data/{self.id}"
-            "/08_monte_carlo/{duration}_{interval}/runs_cube_counts"
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/runs_cube_counts"
         )
         file_list = os.listdir(folder_path)
 
@@ -1084,7 +1084,7 @@ class airspace:
         Parameters
         ----------
         duration : int
-            Simulation duration in hours, serves as identifier for the monte carlo 
+            Simulation duration in hours, serves as identifier for the monte carlo
             results to be plotted.
         interval : int
             Injection interval in seconds, serves as identifier for the monte carlo
@@ -1124,12 +1124,12 @@ class airspace:
     ) -> matplotlib.figure.Figure:
         """
         Generates a heatmap showing the number of occurences for each grid cell in the
-        airspace for an altitude layer defined by the lower altitude of the layer. 
+        airspace for an altitude layer defined by the lower altitude of the layer.
 
         Parameters
         ----------
         duration : int
-            Simulation duration in hours, serves as identifier for the monte carlo 
+            Simulation duration in hours, serves as identifier for the monte carlo
             results to be plotted.
         interval : int
             Injection interval in seconds, serves as identifier for the monte carlo
@@ -1143,7 +1143,6 @@ class airspace:
             Heatmap showing the number of occurences for each grid cell in the airspace
             for the given altitude layer.
         """
-        
 
         # define home path
         home_path = util_general.get_project_root()
