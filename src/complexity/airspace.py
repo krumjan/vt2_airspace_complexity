@@ -1021,8 +1021,8 @@ class airspace:
         # 1. List of all total counts
         # Get list of all total run counts
         folder_path = (
-            "/cluster/home/krum/github/VT2_airspace_complexity/data/LSAGUAC/"
-            "08_monte_carlo/5_20/runs_total_counts"
+            "/cluster/home/krum/github/VT2_airspace_complexity/data/{self.id}/"
+            "08_monte_carlo/{duration}_{interval}/runs_total_counts"
         )
         file_list = os.listdir(folder_path)
 
@@ -1043,8 +1043,8 @@ class airspace:
         # 2. Dictionary with list of counts for each cube
         # Get list of all dictionaries with counts for each cube for each run
         folder_path = (
-            "/cluster/home/krum/github/VT2_airspace_complexity/data/LSAGUAC"
-            "/08_monte_carlo/5_20/runs_cube_counts"
+            "/cluster/home/krum/github/VT2_airspace_complexity/data/{self.id}"
+            "/08_monte_carlo/{duration}_{interval}/runs_cube_counts"
         )
         file_list = os.listdir(folder_path)
 
@@ -1075,20 +1075,20 @@ class airspace:
         self, duration: int, interval: int, ci: float = 0.9
     ) -> matplotlib.figure.Figure:
         """
-        Plots a histogram of the number of occurences for each run conducted as part of
-        the Monte Carlo simulation with a line for the mean and 90% confidence interval
-        of the mean. The simulation duration and injection interval define which monte
-        carlo simulation is to be plotted. The confidence interval that is to be plotted
-        can be defined as a parameter.
+        generates a histogram of the number of occurences for each run conducted as part
+        of the Monte Carlo simulation with a line for the mean and 90% confidence
+        interval of the mean. The simulation duration and injection interval define
+        which monte carlo simulation is to be plotted. The confidence interval that is
+        to be plotted can be defined as a parameter.
 
         Parameters
         ----------
         duration : int
-            Simulation duration in hours, serves as identifier for the monte carlo to be
-            plotted.
+            Simulation duration in hours, serves as identifier for the monte carlo 
+            results to be plotted.
         interval : int
-            Injection interval in seconds, serves as identifier for the monte carlo to
-            be plotted.
+            Injection interval in seconds, serves as identifier for the monte carlo
+            results to be plotted.
         ci : float, optional
             Confidence interval of the mean to be plotted, by default 0.9
 
@@ -1115,6 +1115,91 @@ class airspace:
         return viz.plot_occurence_histogram(
             occ_list=total_occurences_list, ci=ci
         )
+
+    def plot_monte_carlo_heatmap(
+        self,
+        duration: int,
+        interval: int,
+        alt_low: int,
+    ) -> matplotlib.figure.Figure:
+        """
+        Generates a heatmap showing the number of occurences for each grid cell in the
+        airspace for an altitude layer defined by the lower altitude of the layer. 
+
+        Parameters
+        ----------
+        duration : int
+            Simulation duration in hours, serves as identifier for the monte carlo 
+            results to be plotted.
+        interval : int
+            Injection interval in seconds, serves as identifier for the monte carlo
+            results to be plotted.
+        alt_low : int
+            lower bound of altitude layer to show in feet
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            Heatmap showing the number of occurences for each grid cell in the airspace
+            for the given altitude layer.
+        """
+        
+
+        # define home path
+        home_path = util_general.get_project_root()
+
+        # Read aggregated dictionary of cube counts from pickle file
+        file_path = (
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/"
+            f"cube_counts_aggregated.pkl"
+        )
+        with open(file_path, "rb") as f:
+            data = pickle.load(f)
+
+        # If grid for airspace does not exist, generate it
+        if not hasattr(self, "grid"):
+            self.generate_cells(dim=5, alt_diff=1000)
+
+        # generate lists and put information about cube position and count in them
+        lat_min = []
+        lat_max = []
+        lon_min = []
+        lon_max = []
+        alt_min = []
+        alt_max = []
+        count = []
+        for cube in self.cubes:
+            lat_max.append(cube.lat_max)
+            lat_min.append(cube.lat_min)
+            lon_max.append(cube.lon_max)
+            lon_min.append(cube.lon_min)
+            alt_max.append(cube.alt_high)
+            alt_min.append(cube.alt_low)
+            count.append(np.mean(data[cube.id]))
+
+        # Combine lists into dataframe
+        df = pd.DataFrame(
+            list(
+                zip(
+                    lat_min, lat_max, lon_min, lon_max, alt_min, alt_max, count
+                )
+            ),
+            columns=[
+                "lat_min",
+                "lat_max",
+                "lon_min",
+                "lon_max",
+                "alt_min",
+                "alt_max",
+                "count",
+            ],
+        )
+
+        # reduce dataframe to the altitude level to visualize
+        df = df[df.alt_min == alt_low]
+
+        # Return heatmap plot
+        return viz.plot_occurence_heatmap(df, self.shape)
 
 
 class cube:

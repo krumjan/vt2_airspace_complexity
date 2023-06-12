@@ -463,6 +463,29 @@ def plot_occurence_heatmap(
     df: pd.DataFrame,
     airspace: shapely.geometry.polygon.Polygon,
 ) -> matplotlib.figure.Figure:
+    """
+    Generates a heatmap showing the number of occurences for each grid cell in the
+    airspace for the given dataframe which should contain the average occurence count
+    along with information about the grid cell's location for one altitude layer.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe containing the average occurence count for each grid cell on one
+        altitude layer along with information about the grid cell's location. The
+        dataframe should have the following columns: 'lat_min', 'lat_max', 'lon_min',
+        'lon_max', 'alt_min', 'alt_max', 'count'.
+    airspace : shapely.geometry.polygon.Polygon
+        Shapely polygon representing the airspace for which the heatmap should be
+        generated.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        Heatmap showing the number of occurences for each grid cell in the airspace for
+        the given dataframe.
+    """
+
     # generate heatmap plot
     fig = go.Figure(go.Scattermapbox())
     fig.update_layout(
