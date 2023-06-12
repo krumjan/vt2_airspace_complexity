@@ -6,7 +6,7 @@ import numpy as np
 import plotly
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.stats import percentileofscore
+from scipy import stats
 
 
 def yearly_heatmap(
@@ -351,7 +351,9 @@ def cumulative_distribution(
     )
 
     # Calculate quantile corresponding to threshold
-    quantile = (percentileofscore(hourly_df["ac_count"], threshold)) / 100
+    quantile = (
+        stats.percentileofscore(hourly_df["ac_count"], threshold)
+    ) / 100
 
     # Add lines representing the threshold and matching quantile
     fig.add_vline(
@@ -376,4 +378,48 @@ def cumulative_distribution(
     fig.update_layout(title_x=0.5)
 
     # Return the figure
+    return fig
+
+
+def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
+    """
+    Plots a histogram of the number of occurences for each run conducted as part of the
+    Monte Carlo simulation and adds a line for the mean and 90% confidence interval of
+    the mean.
+
+    Parameters
+    ----------
+    occ_list : list
+        List containing the total occurences for each run conducted as part of the Monte
+        Carlo simulation
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+
+    # Create histogram plot
+    fig, ax = plt.subplots(1, 1)
+    sns.histplot(ax=ax, data=occ_list, bins=100)
+
+    # Add labels
+    ax.set_title(
+        "Histogram of number of total occurences for Monte Carlo runs"
+    )
+    ax.set_xlabel("Number of occurences")
+    ax.set_ylabel("Count")
+
+    # add mean line
+    mean = np.mean(occ_list)
+    lower_ci, upper_ci = stats.norm.interval(
+        0.90, loc=np.mean(occ_list), scale=np.std(occ_list)
+    )
+
+    # plot lines for mean, lower and upper confidence intervals
+    plt.axvline(mean, color="red", linestyle="dashed", linewidth=1)
+    plt.axvline(lower_ci, color="red", linestyle="dashed", linewidth=1)
+    plt.axvline(upper_ci, color="red", linestyle="dashed", linewidth=1)
+
+    # return histogram as figure
     return fig
