@@ -400,8 +400,8 @@ def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
     """
 
     # Create histogram plot
-    fig, ax = plt.subplots(1, 1)
-    sns.histplot(ax=ax, data=occ_list, bins=100)
+    ax = sns.histplot(data=occ_list, bins=100)
+    fig = ax.get_figure()
 
     # Add labels
     ax.set_title(
@@ -417,9 +417,9 @@ def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
     )
 
     # plot lines for mean, lower and upper confidence intervals
-    plt.axvline(mean, color="red", linestyle="dashed", linewidth=1)
-    plt.axvline(lower_ci, color="red", linestyle="dashed", linewidth=1)
-    plt.axvline(upper_ci, color="red", linestyle="dashed", linewidth=1)
+    ax.axvline(mean, color="red", linestyle="dashed", linewidth=1)
+    ax.axvline(lower_ci, color="red", linestyle="dashed", linewidth=1)
+    ax.axvline(upper_ci, color="red", linestyle="dashed", linewidth=1)
 
     # return histogram as figure
     return fig
