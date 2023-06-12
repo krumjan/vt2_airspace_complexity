@@ -6,6 +6,7 @@ import random
 import multiprocessing as mp
 from pathlib import Path
 from typing import Union
+import matplotlib
 
 import numpy as np
 import pandas as pd
@@ -1069,6 +1070,51 @@ class airspace:
             "wb",
         ) as fp:
             pickle.dump(aggregated_dict, fp)
+
+    def plot_monte_carlo_histogram(
+        self, duration: int, interval: int, ci: float = 0.9
+    ) -> matplotlib.figure.Figure:
+        """
+        Plots a histogram of the number of occurences for each run conducted as part of
+        the Monte Carlo simulation with a line for the mean and 90% confidence interval
+        of the mean. The simulation duration and injection interval define which monte
+        carlo simulation is to be plotted. The confidence interval that is to be plotted
+        can be defined as a parameter.
+
+        Parameters
+        ----------
+        duration : int
+            Simulation duration in hours, serves as identifier for the monte carlo to be
+            plotted.
+        interval : int
+            Injection interval in seconds, serves as identifier for the monte carlo to
+            be plotted.
+        ci : float, optional
+            Confidence interval of the mean to be plotted, by default 0.9
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            Histogram plot of the number of occurences for each run conducted as part of
+            the Monte Carlo simulation with a line for the mean and 90% confidence
+            interval of the mean.
+        """
+
+        # define home path
+        home_path = util_general.get_project_root()
+
+        # Read aggregated list of total counts from pickle file
+        file_path = (
+            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"/total_counts_aggregated.pkl"
+        )
+        with open(file_path, "rb") as f:
+            total_occurences_list = pickle.load(f)
+
+        # Return histogram plot
+        return viz.plot_occurence_histogram(
+            occ_list=total_occurences_list, ci=ci
+        )
 
 
 class cube:

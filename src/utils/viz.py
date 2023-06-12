@@ -381,7 +381,9 @@ def cumulative_distribution(
     return fig
 
 
-def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
+def plot_occurence_histogram(
+    occ_list: list, ci: float
+) -> matplotlib.figure.Figure:
     """
     Plots a histogram of the number of occurences for each run conducted as part of the
     Monte Carlo simulation and adds a line for the mean and 90% confidence interval of
@@ -392,11 +394,16 @@ def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
     occ_list : list
         List containing the total occurences for each run conducted as part of the Monte
         Carlo simulation
+    ci : float
+        Confidence interval to use for the confidence interval of the mean (e.g. 0.9 for
+        a 90% confidence interval)
 
     Returns
     -------
     _type_
-        _description_
+        Histogram plot of the number of occurences for each run conducted as part of
+        the Monte Carlo simulation with a line for the mean and 90% confidence interval
+        of the mean.
     """
 
     # Create histogram plot
@@ -405,7 +412,8 @@ def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
 
     # Add labels
     ax.set_title(
-        "Histogram of number of total occurences for Monte Carlo runs"
+        "Histogram of number of total occurences for Monte Carlo runs",
+        pad=20,
     )
     ax.set_xlabel("Number of occurences")
     ax.set_ylabel("Count")
@@ -413,13 +421,37 @@ def plot_occurence_hisrogram(occ_list: list) -> matplotlib.figure.Figure:
     # add mean line
     mean = np.mean(occ_list)
     lower_ci, upper_ci = stats.norm.interval(
-        0.90, loc=np.mean(occ_list), scale=np.std(occ_list)
+        ci, loc=np.mean(occ_list), scale=np.std(occ_list)
     )
 
     # plot lines for mean, lower and upper confidence intervals
     ax.axvline(mean, color="red", linestyle="dashed", linewidth=1)
+    ax.text(
+        mean,
+        ax.get_ylim()[1] * 1,
+        f"{mean:.2f}",
+        horizontalalignment="center",
+        verticalalignment="bottom",
+        color="red",
+    )
     ax.axvline(lower_ci, color="red", linestyle="dashed", linewidth=1)
+    ax.text(
+        lower_ci,
+        ax.get_ylim()[1] * 1,
+        f"{lower_ci:.2f}",
+        horizontalalignment="center",
+        verticalalignment="bottom",
+        color="red",
+    )
     ax.axvline(upper_ci, color="red", linestyle="dashed", linewidth=1)
+    ax.text(
+        upper_ci,
+        ax.get_ylim()[1] * 1,
+        f"{upper_ci:.2f}",
+        horizontalalignment="center",
+        verticalalignment="bottom",
+        color="red",
+    )
 
     # return histogram as figure
     return fig
