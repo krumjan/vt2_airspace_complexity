@@ -7,6 +7,7 @@ import plotly
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
+import shapely
 
 
 def yearly_heatmap(
@@ -409,6 +410,7 @@ def plot_occurence_histogram(
     # Create histogram plot
     ax = sns.histplot(data=occ_list, bins=100)
     fig = ax.get_figure()
+    fig.set_size_inches(10, 7)
 
     # Add labels
     ax.set_title(
@@ -454,4 +456,113 @@ def plot_occurence_histogram(
     )
 
     # return histogram as figure
+    return fig
+
+
+def plot_occurence_heatmap(
+    df: pd.DataFrame,
+    airspace: shapely.geometry.polygon.Polygon,
+) -> matplotlib.figure.Figure:
+    # generate heatmap plot
+    fig = go.Figure(go.Scattermapbox())
+    fig.update_layout(
+        mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
+        mapbox_accesstoken=(
+            "pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHRkZnFtb3EifQ."
+            "ydDFlmylEcRCkRLWXqL1Cg"
+        ),
+        showlegend=False,
+        height=1000,
+        width=1000,
+        margin={"l": 0, "b": 0, "t": 0, "r": 0},
+        mapbox_center_lat=airspace.centroid.xy[1][0],
+        mapbox_center_lon=airspace.centroid.xy[0][0],
+        mapbox_zoom=7,
+    )
+
+    # define colorscale
+    cmap = matplotlib.cm.ScalarMappable(
+        norm=matplotlib.colors.Normalize(
+            vmin=df["count"].min(), vmax=df["count"].max()
+        ),
+        cmap="plasma",
+    )
+
+    # function to convert value to color from colorscale
+    def colorscale(value):
+        color = cmap.to_rgba(value)
+        color = [int(c * 255) for c in color]
+        color_hex = "#{:02x}{:02x}{:02x}".format(*color[:3])
+        return color_hex
+
+    # for each rectangle in the dataframe, add a rectangle to the plot, color accoring
+    # to the count value and add the count as text at the center of the rectangle
+    for row in df.iterrows():
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=[row[1][0], row[1][0], row[1][1], row[1][1], row[1][0]],
+                lon=[row[1][2], row[1][3], row[1][3], row[1][2], row[1][2]],
+                mode="lines",
+                line=dict(width=2, color="black"),
+                fill="toself",
+                fillcolor=colorscale(row[1][6]),
+                text=f"count: {row[1][6]}",
+                opacity=0.2,
+                name="Rectangle",
+            )
+        )
+        # calculate center point of rectangle
+        center_lat = (row[1][0] + row[1][1]) / 2
+        center_lon = (row[1][2] + row[1][3]) / 2
+        # add count as text at center point
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=[center_lat],
+                lon=[center_lon],
+                mode="text",
+                text=[round(row[1][6], 2)],
+                textfont=dict(size=8, color="grey"),
+                textposition="middle center",
+                showlegend=False,
+            )
+        )
+
+    # Add airspace shape to the plot
+    lons, lats = airspace.exterior.xy
+    trace = go.Scattermapbox(
+        mode="lines",
+        lat=list(lats),
+        lon=list(lons),
+        line=dict(width=2, color="red"),
+    )
+    fig.add_trace(trace)
+
+    # Manually add colorbar to the plot
+    colorbar_trace = go.Scatter(
+        x=[None],
+        y=[None],
+        mode="markers",
+        marker=dict(
+            colorscale="plasma",
+            showscale=True,
+            cmin=df["count"].min(),
+            cmax=df["count"].max(),
+            colorbar=dict(thickness=20, outlinewidth=0, title="occurences"),
+        ),
+        hoverinfo="none",
+    )
+    fig["layout"]["showlegend"] = False
+    fig.add_trace(colorbar_trace)
+
+    # Improve layout of plot and add title
+    alt_low = df.alt_min.min()
+    fig.update_layout(
+        title_text=f"Altitude level {alt_low}ft - {alt_low+1000}ft",
+        title_x=0.5,
+        margin={"l": 0, "b": 0, "t": 40, "r": 0},
+    )
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(showticklabels=False)
+
+    # return plot
     return fig
