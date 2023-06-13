@@ -61,8 +61,8 @@ class airspace:
             self.lon_min = volume.shape.bounds[0]
             self.lat_cen = volume.shape.centroid.y
             self.lon_cen = volume.shape.centroid.x
-            self.alt_min = volume.elements[0].lower
-            self.alt_max = min(volume.elements[-1].upper, 45000)
+            self.alt_min = int(volume.elements[0].lower * 100)
+            self.alt_max = int(min(volume.elements[-1].upper * 100, 45000))
 
         # if volume is a tuple of a shapely polygon and two floats defining the upper
         # and lower altitude bounds
@@ -708,7 +708,7 @@ class airspace:
         # Return trajectories
         return df_traf
 
-    def generate_cells(self, dim: int = 20, alt_diff: int = 3000) -> None:
+    def generate_cells(self, dim: int = 5, alt_diff: int = 1000) -> None:
         """
         Generates a grid of cells for the airspace. The cells are saved as a list of
         tuples (lat, lon, alt_low, alt_high) in the attribute 'grid'.
@@ -750,15 +750,25 @@ class airspace:
                     )
 
         # Generate altitude intervals
+        # Determine starting altitude (set to closest ...500 below alt_min)
+        hundreds = int(str(self.alt_min)[-3:])
+        if hundreds > 500:
+            start_alt = self.alt_min - (hundreds - 500)
+        elif hundreds < 500:
+            start_alt = self.alt_min - (hundreds + 500)
+        else:
+            start_alt = self.alt_min
+
+        # generate intervals based on starting altitude and altitude difference
         count = np.array(
-            [*range(math.ceil((self.alt_max - self.alt_min) / alt_diff))]
+            [*range(math.ceil((self.alt_max - start_alt) / alt_diff))]
         )
-        alts_low = 18000 + alt_diff * count
-        alts_high = 18000 + alt_diff * (count + 1)
+        alts_low = start_alt + alt_diff * count
+        alts_high = start_alt + alt_diff * (count + 1)
         alts = np.array(list(zip(alts_low, alts_high)))
         self.levels = alts
 
-        # Generate cubes
+        # Generate cubes from grid and altitude intervals
         self.cubes = []
         for level in self.levels:
             for idx, grid in enumerate(self.grid):
