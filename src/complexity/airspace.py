@@ -6,8 +6,8 @@ import random
 import multiprocessing as mp
 from pathlib import Path
 from typing import Union
-import matplotlib
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import plotly
@@ -36,22 +36,24 @@ class airspace:
     ) -> None:
         """
         Class for the definition of an airspace. The airspace is defined by an id and a
-        volume. The volume can be defined either with a traffic.core.airspace.Airspace
-        object or by a tuple of a shapely.geometry.polygon.Polygon object and two floats
-        (alt_min, alt_max).
+        volume. For the volume it is possible ot either pass a traffic airspace object
+        or a tuple containing a shapely polygon and two floats (lower altitude  limit of
+        airspace volumne, upper altitude limit of airspace volume).
 
         Parameters
         ----------
         id : str
-            id of the airspace (e.g. 'LSGUAC')
+            identifier for the airspace (e.g. 'LSAZ' or 'MUAC')
         volume : Union[traffic.core.airspace.Airspace,
                        tuple[shapely.geometry.polygon.Polygon, float, float]]
-            Tree dimensional volume of the airspace. Can be defined either with a
-            traffic.core.airspace.Airspace object or by a tuple of a
-            shapely.geometry.polygon.Polygon object and two floats (alt_min, alt_max).
+            Tree dimensional volume definition of the airspace. Can be defined either
+            with a traffic.core.airspace.Airspace object or by a tuple of a
+            (shapely.geometry.polygon.Polygon, lower altitude, upper altitude). For the
+            latter the altitudes are given in feet.
         """
 
-        # if volume is a traffic airspace object
+        # if volume is a traffic airspace object, extract the relevant information and
+        # initialise the airspace instance
         if type(volume) == traffic.core.airspace.Airspace:
             self.id = id
             self.shape = volume.shape
@@ -65,7 +67,8 @@ class airspace:
             self.alt_max = int(min(volume.elements[-1].upper * 100, 45000))
 
         # if volume is a tuple of a shapely polygon and two floats defining the upper
-        # and lower altitude bounds
+        # and lower altitude bounds, extract the relevant information and initialise
+        # the airspace instance
         else:
             self.id = id
             self.shape = volume[0]
@@ -79,111 +82,6 @@ class airspace:
             self.lon_cen = self.shape.centroid.x
             self.alt_min = alt_lo
             self.alt_max = min(alt_up, 45000)
-
-    def fetch_data(
-        self,
-        start_date: str,
-        end_date: str,
-    ) -> None:
-        """
-        Fetches and combines ADS-B data for the entire cellspace for the provided time
-        period. The data is downloaded in daily chunvks which are saved under
-        'data/cellspace_id/01_raw'. The data is subsequently aggregated and saved as
-        monthly Traffic objects under 'data/cellspace_id/02_combined'.
-
-        Parameters
-        ----------
-        start_date : str
-            start date for data collection in the format 'YYYY-MM-DD'
-        end_date : str
-            end date for data collection in the format 'YYYY-MM-DD'
-        """
-
-        # Define home path
-        home_path = util_general.get_project_root()
-
-        # Data fetching per day
-        print("Fetching data...")
-        util_adsb.download_adsb_para(
-            start=start_date,
-            stop=end_date,
-            folder=f"{home_path}/data/{self.id}/01_raw",
-            bounds=self.shape,
-            lower=self.alt_min,
-            upper=self.alt_max,
-        )
-
-        # Combining data to monthly files
-        print("Combining data...")
-        util_adsb.combine_adsb(
-            path_raw=f"{home_path}/data/{self.id}/01_raw",
-            path_combined=f"{home_path}/data/{self.id}/02_combined",
-        )
-
-    def preprocess_data(self) -> None:
-        """
-        Preprocesses the montly data packages and saves it again as preprocessed monthly
-        Traffic objects under 'data/cellspace_id/03_preprocessed/monthly'. Afterwards
-        monthly Traffic objects are combined to one Traffic object which is saved under
-        'data/cellspace_id/03_preprocessed. Preprocessing includes the following steps:
-            - assigning an id to each trajectory
-            - removing invalid trajectories
-            - applying filtering to the trajectories
-            - resampling the trajectories to 5s intervals
-        """
-
-        # Define home path
-        home_path = util_general.get_project_root()
-
-        # Preprocess data in monthly chunks
-        print("Preprocessing data in monthly chuks...")
-        util_adsb.preprocess_adsb(
-            path_get=f"{home_path}/data/{self.id}/02_combined",
-            path_save=f"{home_path}/data/{self.id}/03_preprocessed/monthly/",
-        )
-
-        # Combine preprocessed data to one file
-        print("Combining preprocessed data...")
-        # Check if file already exists
-        check_file = Path(
-            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_rec.parquet"
-        )
-
-        # If file does not exist, combine data
-        if check_file.is_file() is False:
-            # Get all monthly files
-            files = glob.glob(
-                f"{home_path}/data/{self.id}/03_preprocessed/monthly/*.parquet",
-                recursive=True,
-            )
-            # Read all files and combine them to one dataframe
-            dfs = [Traffic.from_file(file).data for file in tqdm(files)]
-            all_df = pd.concat(dfs)
-            # Save combined dataframe as Traffic object
-            Traffic(all_df).to_parquet(
-                f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_rec.parquet"
-            )
-
-        # Reduce to actual TMA extent
-        print("Reducing to TMA extent...")
-        check_file = Path(
-            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_tma.parquet"
-        )
-
-        # If file does not exist, crop data
-        if check_file.is_file() is False:
-            trajs = Traffic.from_file(
-                f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_rec.parquet"
-            )
-            trajs = trajs.clip(self.shape).eval(
-                desc="clipping", max_workers=20
-            )
-            trajs.to_parquet(
-                f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
-            )
 
     def plot(
         self,
@@ -270,7 +168,112 @@ class airspace:
 
         return fig
 
-    def generate_hourly_df(self, return_df: bool = False) -> pd.DataFrame:
+    def data_fetch(
+        self,
+        start_date: str,
+        end_date: str,
+    ) -> None:
+        """
+        Fetches and combines ADS-B data for the entire cellspace for the provided time
+        period. The data is downloaded in daily chunvks which are saved under
+        'data/cellspace_id/01_raw'. The data is subsequently aggregated and saved as
+        monthly Traffic objects under 'data/cellspace_id/02_combined'.
+
+        Parameters
+        ----------
+        start_date : str
+            start date for data collection in the format 'YYYY-MM-DD'
+        end_date : str
+            end date for data collection in the format 'YYYY-MM-DD'
+        """
+
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Data fetching per day
+        print("Fetching data...")
+        util_adsb.download_adsb_para(
+            start=start_date,
+            stop=end_date,
+            folder=f"{home_path}/data/{self.id}/01_raw",
+            bounds=self.shape,
+            lower=self.alt_min,
+            upper=self.alt_max,
+        )
+
+        # Combining data to monthly files
+        print("Combining data...")
+        util_adsb.combine_adsb(
+            path_raw=f"{home_path}/data/{self.id}/01_raw",
+            path_combined=f"{home_path}/data/{self.id}/02_combined",
+        )
+
+    def data_preprocess(self) -> None:
+        """
+        Preprocesses the montly data packages and saves it again as preprocessed monthly
+        Traffic objects under 'data/cellspace_id/03_preprocessed/monthly'. Afterwards
+        monthly Traffic objects are combined to one Traffic object which is saved under
+        'data/cellspace_id/03_preprocessed. Preprocessing includes the following steps:
+            - assigning an id to each trajectory
+            - removing invalid trajectories
+            - applying filtering to the trajectories
+            - resampling the trajectories to 5s intervals
+        """
+
+        # Define home path
+        home_path = util_general.get_project_root()
+
+        # Preprocess data in monthly chunks
+        print("Preprocessing data in monthly chuks...")
+        util_adsb.preprocess_adsb(
+            path_get=f"{home_path}/data/{self.id}/02_combined",
+            path_save=f"{home_path}/data/{self.id}/03_preprocessed/monthly/",
+        )
+
+        # Combine preprocessed data to one file
+        print("Combining preprocessed data...")
+        # Check if file already exists
+        check_file = Path(
+            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_rec.parquet"
+        )
+
+        # If file does not exist, combine data
+        if check_file.is_file() is False:
+            # Get all monthly files
+            files = glob.glob(
+                f"{home_path}/data/{self.id}/03_preprocessed/monthly/*.parquet",
+                recursive=True,
+            )
+            # Read all files and combine them to one dataframe
+            dfs = [Traffic.from_file(file).data for file in tqdm(files)]
+            all_df = pd.concat(dfs)
+            # Save combined dataframe as Traffic object
+            Traffic(all_df).to_parquet(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_rec.parquet"
+            )
+
+        # Reduce to actual TMA extent
+        print("Reducing to TMA extent...")
+        check_file = Path(
+            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_tma.parquet"
+        )
+
+        # If file does not exist, crop data
+        if check_file.is_file() is False:
+            trajs = Traffic.from_file(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_rec.parquet"
+            )
+            trajs = trajs.clip(self.shape).eval(
+                desc="clipping", max_workers=20
+            )
+            trajs.to_parquet(
+                f"{home_path}/data/{self.id}/"
+                "03_preprocessed/preprocessed_all_tma.parquet"
+            )
+
+    def hourly_generate_df(self, return_df: bool = False) -> pd.DataFrame:
         """
         Generates a dataframe containing hourly aggregated traffic information of
         the trajectories in the airspace. The dataframe is saved as a parquet file
@@ -379,7 +382,7 @@ class airspace:
                 hourly_df = pd.read_parquet(check_file)
                 return hourly_df
 
-    def hourly_plot(self) -> go.Figure:
+    def hourly_heatmap(self) -> go.Figure:
         """
         Generates a heatmap of the hourly traffic volume of the airspace. Prerequisite
         to run this function is the existence of a dataframe containing hourly
@@ -402,7 +405,7 @@ class airspace:
         # Create heatmap and return it
         return viz.yearly_heatmap(hourly_df)
 
-    def heatmap_low_hour(
+    def hourly_heatmap_low(
         self, reference_type: str = "max_perc", reference_value=0.4
     ) -> go.Figure:
         """
@@ -620,7 +623,150 @@ class airspace:
                 f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
             )
 
-    def simulation_trajs(
+    def cells_generate(self, dim: int = 5, alt_diff: int = 1000) -> None:
+        """
+        Generates a grid of cells for the airspace. The cells are saved as a list of
+        tuples (lat, lon, alt_low, alt_high) in the attribute 'grid'.
+        Parameters
+        ----------
+        dim : int, optional
+            horizontal cell size [dim x dim] in nautical miles, by default 20
+        alt_diff : int, optional
+            height of the cells in feet, by default 3000
+        """
+
+        # Generate grid
+        lats = [self.lat_max]
+        lons = [self.lon_min]
+        self.grid = []
+        lat = self.lat_max
+        lon = self.lon_min
+        while lat > self.lat_min:
+            lat = util_geo.new_pos_dist((lat, lon), dim, 180)[0]
+            lats.append(lat)
+        while lon < self.lon_max:
+            lon = util_geo.new_pos_dist((lat, lon), dim, 90)[1]
+            lons.append(lon)
+        for i in range(len(lats) - 1):
+            for j in range(len(lons) - 1):
+                center_lat = (lats[i] + lats[i + 1]) / 2
+                center_lon = (lons[j] + lons[j + 1]) / 2
+                grid_pos = Point(center_lon, center_lat)
+                if self.shape.contains(grid_pos):
+                    self.grid.append(
+                        (
+                            lats[i],
+                            lats[i + 1],
+                            lons[j],
+                            lons[j + 1],
+                            center_lat,
+                            center_lon,
+                        )
+                    )
+
+        # Generate altitude intervals
+        # Determine starting altitude (set to closest ...500 below alt_min)
+        hundreds = int(str(self.alt_min)[-3:])
+        if hundreds > 500:
+            start_alt = self.alt_min - (hundreds - 500)
+        elif hundreds < 500:
+            start_alt = self.alt_min - (hundreds + 500)
+        else:
+            start_alt = self.alt_min
+
+        # generate intervals based on starting altitude and altitude difference
+        count = np.array(
+            [*range(math.ceil((self.alt_max - start_alt) / alt_diff))]
+        )
+        alts_low = start_alt + alt_diff * count
+        alts_high = start_alt + alt_diff * (count + 1)
+        alts = np.array(list(zip(alts_low, alts_high)))
+        self.levels = alts
+
+        # Generate cubes from grid and altitude intervals
+        self.cubes = []
+        for level in self.levels:
+            for idx, grid in enumerate(self.grid):
+                self.cubes.append(
+                    cube(
+                        id=f"range_{level[0]}_grid_{idx}",
+                        lat_max=grid[0],
+                        lat_min=grid[1],
+                        lon_max=grid[3],
+                        lon_min=grid[2],
+                        alt_low=level[0],
+                        alt_high=level[1],
+                    )
+                )
+
+    def cells_visualise(self) -> None:
+        """
+        Visualises the airspace grid and altitude levels. The function requires the
+        attribute 'grid' to exist. If it does not exist, an error is raised.
+        Raises
+        ------
+        ValueError
+            Error is raised if the attribute 'grid' does not exist.
+        """
+        # Raise error if grid does not exist
+        if not hasattr(self, "grid"):
+            raise ValueError(
+                "Grid does not exist. Please execute function "
+                "generate_cells() first."
+            )
+
+        # Plot grid
+        print("Grid:")
+        print("-----------------------------")
+        fig = go.Figure(go.Scattermapbox())
+        fig.update_layout(
+            mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
+            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
+            "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
+            showlegend=False,
+            height=800,
+            width=800,
+            margin={"l": 0, "b": 0, "t": 0, "r": 0},
+            mapbox_center_lat=self.lat_cen,
+            mapbox_center_lon=self.lon_cen,
+            mapbox_zoom=6,
+        )
+        for pos in self.grid:
+            fig.add_trace(
+                go.Scattermapbox(
+                    lat=[pos[0], pos[0], pos[1], pos[1], pos[0]],
+                    lon=[pos[2], pos[3], pos[3], pos[2], pos[2]],
+                    mode="lines",
+                    line=dict(width=2, color="blue"),
+                    fill="toself",
+                    fillcolor="rgba(0, 0, 255, 0.3)",
+                    opacity=0.2,
+                    name="Rectangle",
+                )
+            )
+
+        # Add airspace shape to the plot
+        lons, lats = self.shape.exterior.xy
+        trace = go.Scattermapbox(
+            mode="lines",
+            lat=list(lats),
+            lon=list(lons),
+            line=dict(width=2, color="red"),
+        )
+        fig.add_trace(trace)
+        fig.show()
+
+        # Print vertical ranges
+        print("Vertical ranges:")
+        print("-----------------------------")
+        for idx, level in enumerate(self.levels[::-1]):
+            print(
+                "Range "
+                + "{:02}".format(len(self.levels) - idx)
+                + f" -> {level[0]}ft - {level[1]}ft"
+            )
+
+    def simulation_generate_trajs(
         self,
         duration: int = 24,
         interval: int = 60,
@@ -708,150 +854,7 @@ class airspace:
         # Return trajectories
         return df_traf
 
-    def generate_cells(self, dim: int = 5, alt_diff: int = 1000) -> None:
-        """
-        Generates a grid of cells for the airspace. The cells are saved as a list of
-        tuples (lat, lon, alt_low, alt_high) in the attribute 'grid'.
-        Parameters
-        ----------
-        dim : int, optional
-            horizontal cell size [dim x dim] in nautical miles, by default 20
-        alt_diff : int, optional
-            height of the cells in feet, by default 3000
-        """
-
-        # Generate grid
-        lats = [self.lat_max]
-        lons = [self.lon_min]
-        self.grid = []
-        lat = self.lat_max
-        lon = self.lon_min
-        while lat > self.lat_min:
-            lat = util_geo.new_pos_dist((lat, lon), dim, 180)[0]
-            lats.append(lat)
-        while lon < self.lon_max:
-            lon = util_geo.new_pos_dist((lat, lon), dim, 90)[1]
-            lons.append(lon)
-        for i in range(len(lats) - 1):
-            for j in range(len(lons) - 1):
-                center_lat = (lats[i] + lats[i + 1]) / 2
-                center_lon = (lons[j] + lons[j + 1]) / 2
-                grid_pos = Point(center_lon, center_lat)
-                if self.shape.contains(grid_pos):
-                    self.grid.append(
-                        (
-                            lats[i],
-                            lats[i + 1],
-                            lons[j],
-                            lons[j + 1],
-                            center_lat,
-                            center_lon,
-                        )
-                    )
-
-        # Generate altitude intervals
-        # Determine starting altitude (set to closest ...500 below alt_min)
-        hundreds = int(str(self.alt_min)[-3:])
-        if hundreds > 500:
-            start_alt = self.alt_min - (hundreds - 500)
-        elif hundreds < 500:
-            start_alt = self.alt_min - (hundreds + 500)
-        else:
-            start_alt = self.alt_min
-
-        # generate intervals based on starting altitude and altitude difference
-        count = np.array(
-            [*range(math.ceil((self.alt_max - start_alt) / alt_diff))]
-        )
-        alts_low = start_alt + alt_diff * count
-        alts_high = start_alt + alt_diff * (count + 1)
-        alts = np.array(list(zip(alts_low, alts_high)))
-        self.levels = alts
-
-        # Generate cubes from grid and altitude intervals
-        self.cubes = []
-        for level in self.levels:
-            for idx, grid in enumerate(self.grid):
-                self.cubes.append(
-                    cube(
-                        id=f"range_{level[0]}_grid_{idx}",
-                        lat_max=grid[0],
-                        lat_min=grid[1],
-                        lon_max=grid[3],
-                        lon_min=grid[2],
-                        alt_low=level[0],
-                        alt_high=level[1],
-                    )
-                )
-
-    def visualise_cells(self) -> None:
-        """
-        Visualises the airspace grid and altitude levels. The function requires the
-        attribute 'grid' to exist. If it does not exist, an error is raised.
-        Raises
-        ------
-        ValueError
-            Error is raised if the attribute 'grid' does not exist.
-        """
-        # Raise error if grid does not exist
-        if not hasattr(self, "grid"):
-            raise ValueError(
-                "Grid does not exist. Please execute function "
-                "generate_cells() first."
-            )
-
-        # Plot grid
-        print("Grid:")
-        print("-----------------------------")
-        fig = go.Figure(go.Scattermapbox())
-        fig.update_layout(
-            mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
-            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
-            "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
-            showlegend=False,
-            height=800,
-            width=800,
-            margin={"l": 0, "b": 0, "t": 0, "r": 0},
-            mapbox_center_lat=self.lat_cen,
-            mapbox_center_lon=self.lon_cen,
-            mapbox_zoom=6,
-        )
-        for pos in self.grid:
-            fig.add_trace(
-                go.Scattermapbox(
-                    lat=[pos[0], pos[0], pos[1], pos[1], pos[0]],
-                    lon=[pos[2], pos[3], pos[3], pos[2], pos[2]],
-                    mode="lines",
-                    line=dict(width=2, color="blue"),
-                    fill="toself",
-                    fillcolor="rgba(0, 0, 255, 0.3)",
-                    opacity=0.2,
-                    name="Rectangle",
-                )
-            )
-
-        # Add airspace shape to the plot
-        lons, lats = self.shape.exterior.xy
-        trace = go.Scattermapbox(
-            mode="lines",
-            lat=list(lats),
-            lon=list(lons),
-            line=dict(width=2, color="red"),
-        )
-        fig.add_trace(trace)
-        fig.show()
-
-        # Print vertical ranges
-        print("Vertical ranges:")
-        print("-----------------------------")
-        for idx, level in enumerate(self.levels[::-1]):
-            print(
-                "Range "
-                + "{:02}".format(len(self.levels) - idx)
-                + f" -> {level[0]}ft - {level[1]}ft"
-            )
-
-    def single_simulation_run(
+    def simulation_single_run(
         self,
         args: tuple,
     ) -> None:
@@ -882,11 +885,11 @@ class airspace:
         home_path = util_general.get_project_root()
 
         # Generate set of simulation trajectories
-        df_traf = self.simulation_trajs(duration, interval)
+        df_traf = self.simulation_generate_trajs(duration, interval)
 
         # If grid for airspace does not exist, generate it
         if not hasattr(self, "grid"):
-            self.generate_cells(dim=5, alt_diff=1000)
+            self.cells_generate(dim=5, alt_diff=1000)
 
         # Initialise results dictionary and counter
         results = {}
@@ -976,7 +979,7 @@ class airspace:
         ) as fp:
             pickle.dump(total_count, fp)
 
-    def monte_carlo_run(
+    def simulation_monte_carlo_run(
         self,
         duration: int,
         interval: int,
@@ -1013,7 +1016,7 @@ class airspace:
                     pool.imap(
                         # run the simulation function in parallel processes accordint to
                         # set parameters
-                        self.single_simulation_run,
+                        self.simulation_single_run,
                         [
                             (i, duration, interval)
                             for i in range(start_num, start_num + runs)
@@ -1081,7 +1084,7 @@ class airspace:
         ) as fp:
             pickle.dump(aggregated_dict, fp)
 
-    def plot_monte_carlo_histogram(
+    def simulation_plot_monte_carlo_histogram(
         self, duration: int, interval: int, ci: float = 0.9
     ) -> matplotlib.figure.Figure:
         """
@@ -1126,7 +1129,7 @@ class airspace:
             occ_list=total_occurences_list, ci=ci
         )
 
-    def plot_monte_carlo_heatmap(
+    def simulation_plot_monte_carlo_heatmap(
         self,
         duration: int,
         interval: int,
@@ -1167,7 +1170,7 @@ class airspace:
 
         # If grid for airspace does not exist, generate it
         if not hasattr(self, "grid"):
-            self.generate_cells(dim=5, alt_diff=1000)
+            self.cells_generate(dim=5, alt_diff=1000)
 
         # generate lists and put information about cube position and count in them
         lat_min = []
