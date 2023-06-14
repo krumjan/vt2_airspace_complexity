@@ -52,7 +52,7 @@ class airspace:
             latter the altitudes are given in feet.
         """
 
-        # if volume is a traffic airspace object, extract the relevant information and
+        # If volume is a traffic airspace object, extract the relevant information and
         # initialise the airspace instance
         if type(volume) == traffic.core.airspace.Airspace:
             self.id = id
@@ -66,7 +66,7 @@ class airspace:
             self.alt_min = int(volume.elements[0].lower * 100)
             self.alt_max = int(min(volume.elements[-1].upper * 100, 45000))
 
-        # if volume is a tuple of a shapely polygon and two floats defining the upper
+        # If volume is a tuple of a shapely polygon and two floats defining the upper
         # and lower altitude bounds, extract the relevant information and initialise
         # the airspace instance
         else:
@@ -90,8 +90,15 @@ class airspace:
         reduced=True,
     ) -> go.Figure:
         """
-        Generates a plot of the airspace shape. If the parameter 'traj_sample' is set to
-        True, a sample of the trajectories is added to the plot.
+        Generates a map plot of the airspace outline. If the parameter 'traj_sample' is
+        set to True, a sample of the trajectories is added to the plot. The amount of
+        trajectories is defined by the parameter 'traj_num'. If the parameter 'reduced'
+        is set to True, the plotted sample trajectories are the ones that are reduced to
+        the actual TMA extent. Otherwise, the sample trajectories span the entire
+        rectangular download-boundary. To plot a sample of non-reduced trajectories, a
+        prerequisite is that the function 'data_fetch' has been executed before. To plot
+        a sample of reduced trajectories, the function 'data_preprocess' additionally
+        needs to have been executed before.
 
         Parameters
         ----------
@@ -109,10 +116,10 @@ class airspace:
         Returns
         -------
         go.Figure
-            Figure object containing the plot
+            Figure object containing the map plot of the airspace
         """
 
-        # Create mapbox
+        # Create mapbox figure
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
             mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
@@ -127,11 +134,12 @@ class airspace:
             mapbox_zoom=7,
         )
 
-        # Depending on 'traj_sample', add a sample of trajectories to the plot
+        # When 'traj_sample' is True, add a sample of trajectories to the plot
         if traj_sample:
             # Define home path and import data
             home_path = util_general.get_project_root()
-            # Load either reduced or non-reduced trajectories
+            # Load either reduced or non-reduced trajectories depending on the "reduced"
+            # parameter
             if reduced:
                 trajs = Traffic.from_file(
                     f"{home_path}/data/{self.id}/"
@@ -142,7 +150,7 @@ class airspace:
                     f"{home_path}/data/{self.id}/"
                     "03_preprocessed/preprocessed_all_rec.parquet"
                 )
-            # Add the random sample of trajectories to the plot
+            # Add the random sample of trajectories as lines to the plot
             ids = random.sample(
                 trajs.data["flight_id"].unique().tolist(), traj_num
             )
@@ -156,7 +164,7 @@ class airspace:
                     )
                 )
 
-        # Add airspace shape to the plot
+        # Add the airspace outline to the plot
         lons, lats = self.shape.exterior.xy
         trace = go.Scattermapbox(
             mode="lines",
@@ -166,6 +174,7 @@ class airspace:
         )
         fig.add_trace(trace)
 
+        # Return the mapbox figure
         return fig
 
     def data_fetch(
@@ -174,23 +183,25 @@ class airspace:
         end_date: str,
     ) -> None:
         """
-        Fetches and combines ADS-B data for the entire cellspace for the provided time
-        period. The data is downloaded in daily chunvks which are saved under
-        'data/cellspace_id/01_raw'. The data is subsequently aggregated and saved as
-        monthly Traffic objects under 'data/cellspace_id/02_combined'.
+        Fetches all available ADS-B data for the airspace volume during the specified
+        time period from OpenSky Networks historical database. The data is downloaded in
+        daily chunks using eight parallel processes and subsequently saved as daily
+        Traffic files in the folder 'data/cellspace_id/01_raw'. The data is additionally
+        aggregated into monthly Traffic objects which are saved under
+        'data/cellspace_id/02_combined'.
 
         Parameters
         ----------
         start_date : str
-            start date for data collection in the format 'YYYY-MM-DD'
+            start date for data collection period in the format 'YYYY-MM-DD'
         end_date : str
-            end date for data collection in the format 'YYYY-MM-DD'
+            end date for data collection period in the format 'YYYY-MM-DD'
         """
 
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Data fetching per day
+        # Parallel data fetching and saving of daily chunks
         print("Fetching data...")
         util_adsb.download_adsb_para(
             start=start_date,
@@ -201,7 +212,7 @@ class airspace:
             upper=self.alt_max,
         )
 
-        # Combining data to monthly files
+        # Combining data to monthly files which are also saved
         print("Combining data...")
         util_adsb.combine_adsb(
             path_raw=f"{home_path}/data/{self.id}/01_raw",
