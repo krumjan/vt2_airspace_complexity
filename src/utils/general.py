@@ -1,6 +1,4 @@
 from pathlib import Path
-import math
-from typing import Tuple
 
 
 def get_project_root() -> str:
