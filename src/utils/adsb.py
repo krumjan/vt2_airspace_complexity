@@ -1,19 +1,18 @@
-from pathlib import Path
-from typing import Union, Tuple
-
 import glob
 import multiprocessing as mp
 import os
 
+from typing import Union, Tuple
+from pathlib import Path
+
 import pandas as pd
-from shapely.geometry.base import BaseGeometry
 from tqdm.auto import tqdm
+from shapely.geometry.base import BaseGeometry
 
 from traffic.core import Traffic
 from traffic.data import opensky
 
 
-# Data fetching and combination --------------------------------------------------------
 def download_adsb(
     t0: str,
     tf: str,
@@ -23,8 +22,9 @@ def download_adsb(
     upper: float,
 ) -> None:
     """
-    Queries ADS-B data from Opensky Network for the given time interval, geographical
-    footprint and altitude constraints and saves the data as parquetet traffic object.
+    Queries ADS-B data from Opensky Network for the time interval, geographical
+    footprint and altitude constraints defined trough the parameters and saves the data
+    as parquetet traffic object in the folder also defined by the parameters.
 
     Parameters
     ----------
@@ -38,10 +38,11 @@ def download_adsb(
         Geographical footprint. Can be a string (e.g. "LFBB"), a shapely geometry or a
         tuple of floats (lon_west, lat_south, lon_east, lat_north)
     lower : float
-        Lower altitude constraint in feet
+        Lower altitude constraint in meters
     upper : float
-        Upper altitude constraint in feet
+        Upper altitude constraint in meters
     """
+
     # check whether file already exists
     year = t0.year
     month = t0.month
@@ -59,7 +60,7 @@ def download_adsb(
             other_params=f" and baroaltitude >= {lower} and baroaltitude <= {upper}\
                   and onground = false ",
         )
-        # if not empty, save. Otherwise, print empty day
+        # if not empty, save. Otherwise, print "empty day"
         if traffic_data is None:
             print("empty day")
         else:
@@ -78,9 +79,10 @@ def download_adsb_para(
     max_process: int = 8,
 ) -> None:
     """
-    Parllelisation of the download_adsb function. Queries ADS-B data from Opensky
-    Network for the given time interval, geographical footprint, altitude constraints
-    and saves the data as Traffic in a parquet file format one day at a time.
+    Parllelisation application of the download_adsb() function. Queries ADS-B data from
+    Opensky Network for the time interval, geographical footprint and altitude
+    constraints defined trough the parameters and saves the data as parquetet traffic
+    object in the folder also defined by the parameters.
 
     Parameters
     ----------
@@ -98,8 +100,11 @@ def download_adsb_para(
     upper : float
         Lower altitude constraint in feet
     max_process : int, optional
-        Number of processes to use for parallelization, by default 8
+        Number of processes to use for parallelization, by default 8. It is not advised
+        to use more than 8 processes as it will not improve the speed of the download
+        due to limitations on the side of Opensky Netork.
     """
+
     # convert bounds to meters
     lower_m = lower * 0.3048
     upper_m = upper * 0.3048
@@ -118,24 +123,24 @@ def download_adsb_para(
             t0, tf, fol, airs, lowers_m, uppers_m
         )
     ]
-    # run the download_adsb function in parallel
+    # run the download_adsb function in parallel processes
     with mp.Pool(max_process) as pool:
         pool.starmap(download_adsb, t)
 
 
 def combine_adsb(path_raw: str, path_combined: str) -> None:
     """
-    Combines all parquet files in each folder in the provided path "path_raw" into
-    one parquet file and saves it in the "path_combined" folder. Data is treated by
-    year and month.
+    Combines daily parquet files situated in the same sobfolder of "path_raw" into one
+    parquet file and saves the combined file in the "path_combined" folder.
 
     Parameters
     ----------
     path_raw : str
-        Folder path where the daily parquet files are stored
+        Folder where subfolders with daily parquet files are stored
     path_combined : str
         Folder path where the combined parquet file will be stored
     """
+    
     # create combined folder if it does not exist
     if os.path.isdir(path_combined) is False:
         os.mkdir(path_combined)
@@ -161,15 +166,14 @@ def combine_adsb(path_raw: str, path_combined: str) -> None:
             )
 
 
-# Data preprocessing -------------------------------------------------------------------
 def preprocess_adsb(
     path_get: str,
     path_save: str,
 ) -> None:
     """
-    Preprocesses the ADS-B data and saves it in the provided path "path_save". Data is
-    treated by year and month.
-    Preprocessing includes:
+    Preprocesses each parqueted traffic object in the "path_get" folder and saves the
+    preprocessed traffic object in the "path_save" folder.
+    Preprocessing steps includes:
         - assigning an id to each trajectory
         - removing invalid trajectories
         - applying filtering to the trajectories
@@ -182,6 +186,7 @@ def preprocess_adsb(
     path_save : str
         Path to the folder where the preprocessed parquet files will be stored
     """
+
     # create preprocessed folder if it does not exist
     if os.path.isdir(path_save) is False:
         Path(path_save).mkdir(parents=True, exist_ok=True)
