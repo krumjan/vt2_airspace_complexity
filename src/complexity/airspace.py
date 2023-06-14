@@ -221,14 +221,20 @@ class airspace:
 
     def data_preprocess(self) -> None:
         """
-        Preprocesses the montly data packages and saves it again as preprocessed monthly
-        Traffic objects under 'data/cellspace_id/03_preprocessed/monthly'. Afterwards
-        monthly Traffic objects are combined to one Traffic object which is saved under
-        'data/cellspace_id/03_preprocessed. Preprocessing includes the following steps:
-            - assigning an id to each trajectory
-            - removing invalid trajectories
-            - applying filtering to the trajectories
-            - resampling the trajectories to 5s intervals
+        Preprocesses the montly data chuncks resulting from 'fetch_data' and saves them
+        again as preprocessed monthly Traffic objects under 'data/cellspace_id/
+        03_preprocessed/monthly'. The preprocessing includes the following steps:
+            - Assigning a unique id to each trajectory
+            - Removing invalid trajectories
+            - Applying filtering to the trajectories in order to remove outliers
+            - Resampling the trajectories to 5s intervals
+
+        Afterwards the monthly Traffic objects are also combined to one aggregated
+        Traffic object which is saved as 'data/cellspace_id/03_preprocessed/
+        preprocessed_all_rec.parquet'. Since the data is downloaded in a rectangular
+        shape extent beyond the actual airspace boundary, the aggregated Traffic object
+        is also reduced to the actual airspace boundary extent and also saved under
+        it under 'data/cellspace_id/03_preprocessed/preprocessed_all_red.parquet'.
         """
 
         # Define home path
@@ -243,11 +249,10 @@ class airspace:
 
         # Combine preprocessed data to one file
         print("Combining preprocessed data...")
-        # Check if file already exists
+        # Check whether file already exists
         check_file = Path(
             f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_rec.parquet"
         )
-
         # If file does not exist, combine data
         if check_file.is_file() is False:
             # Get all monthly files
@@ -264,13 +269,13 @@ class airspace:
                 "03_preprocessed/preprocessed_all_rec.parquet"
             )
 
-        # Reduce to actual TMA extent
-        print("Reducing to TMA extent...")
+        # Reduce to actual airspace extent
+        print("Reducing to airspace extent...")
         check_file = Path(
-            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_tma.parquet"
+            f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_red.parquet"
         )
 
-        # If file does not exist, crop data
+        # If file does not exist, crop data to tma extent
         if check_file.is_file() is False:
             trajs = Traffic.from_file(
                 f"{home_path}/data/{self.id}/"
@@ -281,21 +286,22 @@ class airspace:
             )
             trajs.to_parquet(
                 f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
+                "03_preprocessed/preprocessed_all_red.parquet"
             )
 
     def hourly_generate_df(self, return_df: bool = False) -> pd.DataFrame:
         """
         Generates a dataframe containing hourly aggregated traffic information of
-        the trajectories in the airspace. The dataframe is saved as a parquet file
-        under 'data/cellspace_id/04_hourly' and can also directly be returned as a
-        pandas dataframe by the function if 'return_df' is set to True.
+        for the airspace. This information includes the entry count of aircraft into the
+        airspace for the discrete one hour time intervals as well as a list of the
+        corresponding flight_ids. The dataframe is saved as a parquet file under
+        'data/cellspace_id/04_hourly' and can also directly be returned as a pandas
+        dataframe by the function if 'return_df' is set to True.
 
-        Parameters
+        Parametersd
         ----------
         return_df : bool, optional
-            If True, the dataframe will be returend by the function, by default
-            False
+            If True, the dataframe will be returend by the function, by default False
 
         Returns
         -------
@@ -313,12 +319,13 @@ class airspace:
         )
         # If file does not exist, run process to generate it
         if check_file.is_file() is False:
-            # Import data
+            # Load trajectory data
             trajs = Traffic.from_file(
                 f"{home_path}/data/{self.id}/"
                 "03_preprocessed/preprocessed_all_tma.parquet"
             )
             # Aggregate data by flight_id, keeping the minimum and maximum timestamp
+            # which correspond to the airspace entry and exit time of the flight
             df = trajs.data
             df = (
                 df.groupby("flight_id")["timestamp"]
@@ -370,7 +377,6 @@ class airspace:
                     "month",
                     "day_of_year",
                     "ac_count",
-                    # "stay_h",
                     "flight_ids",
                 ]
             ]
@@ -378,7 +384,7 @@ class airspace:
             hourly_df["flight_ids"] = hourly_df["flight_ids"].apply(
                 lambda x: [] if x == 0 else x
             )
-            # Save dataframe as parquet file
+            # Save hourly dataframe as parquet file
             if not os.path.exists(f"{home_path}/data/{self.id}/04_hourly/"):
                 os.makedirs(f"{home_path}/data/{self.id}/04_hourly/")
             hourly_df.to_parquet(check_file)
@@ -387,7 +393,7 @@ class airspace:
                 hourly_df = pd.read_parquet(check_file)
                 return hourly_df
 
-        # If file aready existrs, return it if 'return_df' is set to True
+        # If file aready existr, return it if 'return_df' is set to True
         else:
             if return_df:
                 hourly_df = pd.read_parquet(check_file)
@@ -395,9 +401,9 @@ class airspace:
 
     def hourly_heatmap(self) -> go.Figure:
         """
-        Generates a heatmap of the hourly traffic volume of the airspace. Prerequisite
-        to run this function is the existence of a dataframe containing hourly
-        aggregated which is created by the function 'get_hourly_df'.
+        Generates a heatmap-like plot of the hourly aircraft entry count into the
+        airspace. Prerequisite to run this function is the existence of a dataframe
+        containing hourly aggregated data as created by the function 'get_hourly_df'.
 
         Returns
         -------
@@ -408,12 +414,12 @@ class airspace:
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load pandas dataframe from parquet file
+        # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
 
-        # Create heatmap and return it
+        # Return heatmap-like plot
         return viz.yearly_heatmap(hourly_df)
 
     def hourly_heatmap_low(
