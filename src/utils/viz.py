@@ -1,21 +1,22 @@
-import pandas as pd
-import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy import stats
+import seaborn as sns
+import shapely
 import plotly
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy import stats
-import shapely
 
 
 def yearly_heatmap(
     hourly_df: pd.DataFrame,
 ) -> plotly.graph_objs._figure.Figure:
     """
-    Generate a yearly heatmap of the aircraft count. The function returns a plotly
-    figure representing the aircraft count per hour of the day and day of the year.
+    Generate a heatmap-like plot of the aircraft count over time. The function returns a
+    plotly figure showing the aircraft count per hour of the day and day of the year,
+    color-coding the count.
 
     Parameters
     ----------
@@ -29,7 +30,7 @@ def yearly_heatmap(
         Plotly figure containing the yearly heatmap.
     """
 
-    # Generate a plotly density plot of the variable 'ac_count'
+    # Generate a plotly heatmap plot of the variable 'ac_count'
     fig = px.density_heatmap(
         hourly_df,
         x="day_of_year",
@@ -41,17 +42,18 @@ def yearly_heatmap(
         color_continuous_scale="jet",
     )
 
-    # update labels
+    # Update labels
     fig.update_xaxes(title_text="Day of the year")
     fig.update_yaxes(title_text="Hour of the day")
     fig.update_layout(title_text="Hourly aircraft entry count")
     fig.update_layout(coloraxis_colorbar=dict(title="entry count"))
     fig.update_layout(margin=dict(l=110, r=50, b=0, t=35), title_x=0.5)
 
-    # update ticks
+    # Update ticks
     fig.update_xaxes(tickmode="linear", tick0=0, dtick=10)
     fig.update_yaxes(tickmode="linear", tick0=0, dtick=1)
 
+    # Return the figure
     return fig
 
 
@@ -155,6 +157,7 @@ def heatmap_low_hour(
     fig.update_yaxes(tickmode="linear", tick0=0, dtick=1)
     fig.update_layout(margin=dict(l=110, r=50, b=0, t=35))
 
+    # Return the figure
     return fig
 
 
@@ -168,8 +171,9 @@ def hourly_boxplots(
     data separated by hour of the day, day of the week, day of the month and month. The
     returned figure contains four subplots, each showing the distribution of the hourly
     aircraft count for the data separated by one of the four variables as a multiple
-    boxplot. The threshold for low traffic hours can be set by trough the reference_type
-    and reference_value parameters.
+    boxplot. The threshold for low traffic hours, which is also visualised as a line in
+    all four subplots, can be adjusted by the reference_type and reference_value
+    parameters.
 
     Parameters
     ----------
@@ -200,7 +204,7 @@ def hourly_boxplots(
             "Please use 'mean', 'median', 'quantile' or 'max_perc'."
         )
 
-    # generate subplots containing four plots
+    # Generate figure with four subplots
     fig, axes = plt.subplots(2, 2)
     fig.set_size_inches(1280 / 96, 720 / 96)
 
@@ -275,7 +279,7 @@ def hourly_boxplots(
         notch=True,
     )
 
-    # Add a horizontal line to indicate the threshold
+    # Add a horizontal line to indicate the threshold to each subplot
     if reference_type is not None:
         axes[0, 0].axhline(threshold, ls="--", color="red", linewidth=1)
         axes[0, 1].axhline(threshold, ls="--", color="red", linewidth=1)
@@ -300,9 +304,9 @@ def cumulative_distribution(
     reference_value: float = 0.5,
 ) -> plotly.graph_objs._figure.Figure:
     """
-    Generate a cumulative distribution plot of the hourly entry counts. The function
-    returns a plotly figure. The threshold can be set using the reference type and
-    value and is also indicated in the plot.
+    Returns a cumulative distribution function plot for the hourly entry counts of
+    the airspace with additional lines showing a set threshold. The threshold can be
+    set using the reference type and value and is also indicated in the plot.
 
     Parameters
     ----------
@@ -382,9 +386,7 @@ def cumulative_distribution(
     return fig
 
 
-def plot_occurence_histogram(
-    occ_list: list, ci: float
-) -> matplotlib.figure.Figure:
+def occurence_histogram(occ_list: list, ci: float) -> matplotlib.figure.Figure:
     """
     Plots a histogram of the number of occurences for each run conducted as part of the
     Monte Carlo simulation and adds a line for the mean and 90% confidence interval of
@@ -420,13 +422,13 @@ def plot_occurence_histogram(
     ax.set_xlabel("Number of occurences")
     ax.set_ylabel("Count")
 
-    # add mean line
+    # Compute mean with confidence interval
     mean = np.mean(occ_list)
     lower_ci, upper_ci = stats.norm.interval(
         ci, loc=np.mean(occ_list), scale=np.std(occ_list)
     )
 
-    # plot lines for mean, lower and upper confidence intervals
+    # Plot lines for mean, lower and upper confidence intervals
     ax.axvline(mean, color="red", linestyle="dashed", linewidth=1)
     ax.text(
         mean,
@@ -455,11 +457,11 @@ def plot_occurence_histogram(
         color="red",
     )
 
-    # return histogram as figure
+    # Return histogram as figure
     return fig
 
 
-def plot_occurence_heatmap(
+def occurence_heatmap(
     df: pd.DataFrame,
     airspace: shapely.geometry.polygon.Polygon,
 ) -> matplotlib.figure.Figure:
@@ -486,7 +488,7 @@ def plot_occurence_heatmap(
         the given dataframe.
     """
 
-    # generate heatmap plot
+    # Generate heatmap plot
     fig = go.Figure(go.Scattermapbox())
     fig.update_layout(
         mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
@@ -503,7 +505,7 @@ def plot_occurence_heatmap(
         mapbox_zoom=7,
     )
 
-    # define colorscale
+    # Define colorscale
     cmap = matplotlib.cm.ScalarMappable(
         norm=matplotlib.colors.Normalize(
             vmin=df["count"].min(), vmax=df["count"].max()
@@ -511,14 +513,14 @@ def plot_occurence_heatmap(
         cmap="plasma",
     )
 
-    # function to convert value to color from colorscale
+    # Function to convert value to color from colorscale
     def colorscale(value):
         color = cmap.to_rgba(value)
         color = [int(c * 255) for c in color]
         color_hex = "#{:02x}{:02x}{:02x}".format(*color[:3])
         return color_hex
 
-    # for each rectangle in the dataframe, add a rectangle to the plot, color accoring
+    # For each rectangle in the dataframe, add a rectangle to the plot, color accoring
     # to the count value and add the count as text at the center of the rectangle
     for row in df.iterrows():
         fig.add_trace(
@@ -534,10 +536,10 @@ def plot_occurence_heatmap(
                 name="Rectangle",
             )
         )
-        # calculate center point of rectangle
+        # Calculate center point of rectangle
         center_lat = (row[1][0] + row[1][1]) / 2
         center_lon = (row[1][2] + row[1][3]) / 2
-        # add count as text at center point
+        # Add count as text at center point
         fig.add_trace(
             go.Scattermapbox(
                 lat=[center_lat],
@@ -587,5 +589,5 @@ def plot_occurence_heatmap(
     fig.update_xaxes(showticklabels=False)
     fig.update_yaxes(showticklabels=False)
 
-    # return plot
+    # Return plot
     return fig
