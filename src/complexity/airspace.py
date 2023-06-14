@@ -186,9 +186,9 @@ class airspace:
         Fetches all available ADS-B data for the airspace volume during the specified
         time period from OpenSky Networks historical database. The data is downloaded in
         daily chunks using eight parallel processes and subsequently saved as daily
-        Traffic files in the folder 'data/cellspace_id/01_raw'. The data is additionally
+        Traffic files in the folder 'data/airspace_id/01_raw'. The data is additionally
         aggregated into monthly Traffic objects which are saved under
-        'data/cellspace_id/02_combined'.
+        'data/airspace_id/02_combined'.
 
         Parameters
         ----------
@@ -222,7 +222,7 @@ class airspace:
     def data_preprocess(self) -> None:
         """
         Preprocesses the montly data chuncks resulting from 'fetch_data' and saves them
-        again as preprocessed monthly Traffic objects under 'data/cellspace_id/
+        again as preprocessed monthly Traffic objects under 'data/airspace_id/
         03_preprocessed/monthly'. The preprocessing includes the following steps:
             - Assigning a unique id to each trajectory
             - Removing invalid trajectories
@@ -230,11 +230,11 @@ class airspace:
             - Resampling the trajectories to 5s intervals
 
         Afterwards the monthly Traffic objects are also combined to one aggregated
-        Traffic object which is saved as 'data/cellspace_id/03_preprocessed/
+        Traffic object which is saved as 'data/airspace_id/03_preprocessed/
         preprocessed_all_rec.parquet'. Since the data is downloaded in a rectangular
         shape extent beyond the actual airspace boundary, the aggregated Traffic object
         is also reduced to the actual airspace boundary extent and also saved under
-        it under 'data/cellspace_id/03_preprocessed/preprocessed_all_red.parquet'.
+        it under 'data/airspace_id/03_preprocessed/preprocessed_all_red.parquet'.
         """
 
         # Define home path
@@ -295,7 +295,7 @@ class airspace:
         for the airspace. This information includes the entry count of aircraft into the
         airspace for the discrete one hour time intervals as well as a list of the
         corresponding flight_ids. The dataframe is saved as a parquet file under
-        'data/cellspace_id/04_hourly' and can also directly be returned as a pandas
+        'data/airspace_id/04_hourly' and can also directly be returned as a pandas
         dataframe by the function if 'return_df' is set to True.
 
         Parametersd
@@ -532,11 +532,11 @@ class airspace:
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
         """
-        Generates a set of trajectories that only contains the low traffic hours. The
-        threshold for the classification of low traffic hours can be set by the user
-        trough the reference type and value. Prerequisite to run this function is the
-        existence of a dataframe containing hourly aggregated which is created by the
-        function 'get_hourly_df'.
+        Generates a set of trajectories that only includes trajectories crossing the
+        airspace during low traffic hours. The threshold for the classification of low
+        traffic hours can be set trough the reference type and value parameters.
+        Prerequisite to run this function is the existence of a dataframe containining
+        hourly aggregated which is created by the function 'get_hourly_df'.
 
         Parameters
         ----------
@@ -556,13 +556,14 @@ class airspace:
         ValueError
             Raised if the reference type is not one of the allowed types
         """
+
         # Define home path
         home_path = util_general.get_project_root()
 
         # Only do the steps if the required file does not exist yet
         if not os.path.exists(
             f"{home_path}/data/{self.id}/"
-            "05_low_traffic/trajs_tma_low.parquet"
+            "05_low_traffic/trajs_red_low.parquet"
         ):
             # If any of the required files does not exist, raise an exception
             if not os.path.exists(
@@ -570,7 +571,7 @@ class airspace:
                 "03_preprocessed/preprocessed_all_rec.parquet"
             ) or not os.path.exists(
                 f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
+                "03_preprocessed/preprocessed_all_red.parquet"
             ):
                 raise Exception(
                     "Preprocessed trajectories have not been created yet. "
@@ -592,12 +593,12 @@ class airspace:
                 f"{home_path}/data/{self.id}/"
                 "03_preprocessed/preprocessed_all_rec.parquet"
             )
-            trajs_tma = Traffic.from_file(
+            trajs_red = Traffic.from_file(
                 f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
+                "03_preprocessed/preprocessed_all_red.parquet"
             )
 
-            # Determine the threshold
+            # Determine the threshold based onf function parameters
             if reference_type == "mean":
                 threshold = hourly_df["ac_count"].mean()
             elif reference_type == "median":
@@ -615,7 +616,7 @@ class airspace:
             # Determine hours below threshold
             hourly_df["below_th"] = hourly_df["ac_count"] < threshold
 
-            # Get id of all flights during these low traffic hours
+            # Aggregate all ids of all flights during these low traffic hours
             low_ids = hourly_df[hourly_df.below_th == True].flight_ids
             low_ids_list = []
             for x in low_ids:
@@ -627,7 +628,7 @@ class airspace:
 
             # Reduce trajectory data to low traffic hours
             trajs_rec_low = trajs_rec[low_ids]
-            trajs_tma_low = trajs_tma[low_ids]
+            trajs_red_low = trajs_red[low_ids]
 
             # Save reduced trajectory data
             if not os.path.exists(
@@ -637,26 +638,29 @@ class airspace:
             trajs_rec_low.to_parquet(
                 f"{home_path}/data/{self.id}/05_low_traffic/trajs_rec_low.parquet"
             )
-            trajs_tma_low.to_parquet(
-                f"{home_path}/data/{self.id}/05_low_traffic/trajs_tma_low.parquet"
+            trajs_red_low.to_parquet(
+                f"{home_path}/data/{self.id}/05_low_traffic/trajs_red_low.parquet"
             )
 
     def cells_generate(self, dim: int = 5, alt_diff: int = 1000) -> None:
         """
-        Generates a grid of cells for the airspace. The cells are saved as a list of
-        tuples (lat, lon, alt_low, alt_high) in the attribute 'grid'.
+        Generates a threedimensional grid of cells for the airspace. The cells are saved
+        as a list of cube objects in the 'grid' attribute of the airspace instance.
+
         Parameters
         ----------
         dim : int, optional
-            horizontal cell size [dim x dim] in nautical miles, by default 20
+            horizontal cell size [dim x dim] in nautical miles, by default 5
         alt_diff : int, optional
-            height of the cells in feet, by default 3000
+            height of the cells in feet, by default 1000
         """
 
-        # Generate grid
+        # Generate horizontal grid
+        # Generate lists of latitudes and longitudes based on the airspace boundaries
+        # and the desired cell size that defines a rectangular gird spanning the whole
+        # airspace area
         lats = [self.lat_max]
         lons = [self.lon_min]
-        self.grid = []
         lat = self.lat_max
         lon = self.lon_min
         while lat > self.lat_min:
@@ -665,6 +669,9 @@ class airspace:
         while lon < self.lon_max:
             lon = util_geo.new_pos_dist((lat, lon), dim, 90)[1]
             lons.append(lon)
+        # Iterate trough the rectangular grid and check if the center of each cell is
+        # within the airspace boundaries. If so, add the cell to the grid attribute
+        self.grid = []
         for i in range(len(lats) - 1):
             for j in range(len(lons) - 1):
                 center_lat = (lats[i] + lats[i + 1]) / 2
@@ -691,7 +698,6 @@ class airspace:
             start_alt = self.alt_min - (hundreds + 500)
         else:
             start_alt = self.alt_min
-
         # generate intervals based on starting altitude and altitude difference
         count = np.array(
             [*range(math.ceil((self.alt_max - start_alt) / alt_diff))]
@@ -719,13 +725,17 @@ class airspace:
 
     def cells_visualise(self) -> None:
         """
-        Visualises the airspace grid and altitude levels. The function requires the
-        attribute 'grid' to exist. If it does not exist, an error is raised.
+        Visualises the cells comprising the airspace grid. The horizontal cells are
+        displayed as rectangles on a map, the vertical intervals are displayed as
+        text below the map. The function requires the attribute 'grid' which is created
+        by the function cells_generate. If it does not exist, an error is raised.
+
         Raises
         ------
         ValueError
             Error is raised if the attribute 'grid' does not exist.
         """
+
         # Raise error if grid does not exist
         if not hasattr(self, "grid"):
             raise ValueError(
@@ -733,7 +743,7 @@ class airspace:
                 "generate_cells() first."
             )
 
-        # Plot grid
+        # Plot horizontal grid as rectangles on a map
         print("Grid:")
         print("-----------------------------")
         fig = go.Figure(go.Scattermapbox())
@@ -763,7 +773,7 @@ class airspace:
                 )
             )
 
-        # Add airspace shape to the plot
+        # Add airspace outline to the plot
         lons, lats = self.shape.exterior.xy
         trace = go.Scattermapbox(
             mode="lines",
@@ -843,7 +853,7 @@ class airspace:
         )
         ids = np.array(ids)[indices]
 
-        # Generate list of simulated trajectories
+        # Generate list of simulated trajectories with simulation timestamps
         df_all = []
         for id, tm in zip(ids, times):
             temp = grouped.get_group(id)
@@ -863,20 +873,30 @@ class airspace:
             .reset_index()
         )
 
-        # Crop trajectories longer than the simulation duration
+        # Crop trajectories that go beyond the simulation duration
         df_traf = df_traf[
             df_traf.timestamp
             <= (pd.Timestamp(start_time) + pd.Timedelta(hours=duration))
         ]
 
-        # Return trajectories
+        # Return set of simulated trajectories as a dataframe
         return df_traf
 
     def simulation_single_run(
         self,
-        args: tuple,
+        args: tuple[int, int, int],
     ) -> None:
-        """_summary_
+        """
+        Runs a single simulation of the airspace with the specified parameters and saves
+        the results in the form of a dictionary containing the amount of occurencees for
+        each cell and the total amount of occurernces for the entire airspace. The
+        overall process contains the following steps:
+          1. Generate a set of simulated trajectories according to the specified
+          parameters.
+          2. For each cell in the airspace grid, check for overlaps of trajectories
+          being in the cell at the same time. During this step, the amount of such
+          occurences is counted for each cell and overall.
+          3. Save the results under 'data/airspace_id/06_monte_carlo/duration_interval'.
 
         Parameters
         ----------
@@ -892,6 +912,7 @@ class airspace:
                 Injection interval (time interval between flights entering the airspace)
                 in seconds.
         """
+
         # Unpack arguments
         (
             num,
@@ -909,7 +930,9 @@ class airspace:
         if not hasattr(self, "grid"):
             self.cells_generate(dim=5, alt_diff=1000)
 
-        # Initialise results dictionary and counter
+        # Initialise results dictionary and counter. in the dictionary the amount of
+        # occurences of each cell is stored while the counter is used to keep track of
+        # the total amount of occurences of the simulation.
         results = {}
         total_count = 0
 
@@ -966,15 +989,15 @@ class airspace:
         # Save results for each cube of the gird packed in a dictionary. First check if
         # directory exists, if not create it
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_cube_counts/"
         ):
             os.makedirs(
-                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+                f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
                 f"/runs_cube_counts/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_cube_counts/{num}_results.pkl",
             "wb",
         ) as fp:
@@ -983,15 +1006,15 @@ class airspace:
         # Save the total count of occurences also as a pickle file. First check if
         # directory exists, if not create it
         if not os.path.exists(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_total_counts/"
         ):
             os.makedirs(
-                f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+                f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
                 f"/runs_total_counts/"
             )
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_total_counts/{num}_total_count.pkl",
             "wb",
         ) as fp:
@@ -1008,7 +1031,11 @@ class airspace:
         """
         Runs a defined amount of simulation runs (monte carlo style), using parallel
         processes. The simulation duration, injection interval and number of runs as
-        well as the max amount of parallel processes can be defined as parameters.
+        well as the max amount of parallel processes can be defined as parameters. After
+        all runs have been performed, the results are aggregated and saved as two files,
+        one containing a dictionary that contains a list of the number of occurences of
+        each run for each cube and a second file containing a list of the total number
+        of occurences for each run.
 
         Parameters
         ----------
@@ -1032,7 +1059,7 @@ class airspace:
                 # tqdm to show progress
                 tqdm(
                     pool.imap(
-                        # run the simulation function in parallel processes accordint to
+                        # run the simulation function in parallel processes according to
                         # set parameters
                         self.simulation_single_run,
                         [
@@ -1045,27 +1072,24 @@ class airspace:
             )
 
         # Generate aggregated results for all simulation runs
-
-        # define home path
+        # Define home path
         home_path = util_general.get_project_root()
 
         # 1. List of all total counts
         # Get list of all total run counts
         folder_path = (
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_total_counts"
         )
         file_list = os.listdir(folder_path)
-
         # Read values from all files and aggregate in list
         total_counts = []
         for file in file_list:
             with open(folder_path + "/" + file, "rb") as f:
                 total_counts.append(pickle.load(f))
-
         # Save aggregated list as pickle file
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/total_counts_aggregated.pkl",
             "wb",
         ) as fp:
@@ -1074,17 +1098,15 @@ class airspace:
         # 2. Dictionary with list of counts for each cube
         # Get list of all dictionaries with counts for each cube for each run
         folder_path = (
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/runs_cube_counts"
         )
         file_list = os.listdir(folder_path)
-
         # Read dictionaries from all files and aggregate in list
         dictionaries = []
         for file in file_list:
             with open(folder_path + "/" + file, "rb") as f:
                 dictionaries.append(pickle.load(f))
-
         # Aggregate dictionaries in one dictionary
         aggregated_dict = {}
         for dictionary in dictionaries:
@@ -1093,10 +1115,9 @@ class airspace:
                     aggregated_dict[key].append(value)
                 else:
                     aggregated_dict[key] = [value]
-
         # Save aggregated dictionary as pickle file
         with open(
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/cube_counts_aggregated.pkl",
             "wb",
         ) as fp:
@@ -1106,11 +1127,11 @@ class airspace:
         self, duration: int, interval: int, ci: float = 0.9
     ) -> matplotlib.figure.Figure:
         """
-        generates a histogram of the number of occurences for each run conducted as part
-        of the Monte Carlo simulation with a line for the mean and 90% confidence
+        Generates a histogram of the number of total occurences for the runs conducted
+        as part of the Monte Carlo simulation with a line for the mean and confidence
         interval of the mean. The simulation duration and injection interval define
         which monte carlo simulation is to be plotted. The confidence interval that is
-        to be plotted can be defined as a parameter.
+        to be plotted can also be defined trough the parameters.
 
         Parameters
         ----------
@@ -1136,7 +1157,7 @@ class airspace:
 
         # Read aggregated list of total counts from pickle file
         file_path = (
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
             f"/total_counts_aggregated.pkl"
         )
         with open(file_path, "rb") as f:
@@ -1151,11 +1172,13 @@ class airspace:
         self,
         duration: int,
         interval: int,
-        alt_low: int,
+        alt_low: int = None,
     ) -> matplotlib.figure.Figure:
         """
         Generates a heatmap showing the number of occurences for each grid cell in the
-        airspace for an altitude layer defined by the lower altitude of the layer.
+        airspace for one altitude layer. The layer can be specified trough the alt_low
+        parameter. If not specified, the altitude layer with the highest number of
+        occurences for one cell is plotted.
 
         Parameters
         ----------
@@ -1180,7 +1203,7 @@ class airspace:
 
         # Read aggregated dictionary of cube counts from pickle file
         file_path = (
-            f"{home_path}/data/{self.id}/08_monte_carlo/{duration}_{interval}/"
+            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}/"
             f"cube_counts_aggregated.pkl"
         )
         with open(file_path, "rb") as f:
@@ -1226,7 +1249,11 @@ class airspace:
         )
 
         # reduce dataframe to the altitude level to visualize
-        df = df[df.alt_min == alt_low]
+        if alt_low is None:
+            most_occ_alt = df.loc[df["count"].idxmax(), "alt_min"]
+            df = df[df.alt_min == most_occ_alt]
+        else:
+            df = df[df.alt_min == alt_low]
 
         # Return heatmap plot
         return viz.plot_occurence_heatmap(df, self.shape)
@@ -1244,12 +1271,14 @@ class cube:
         alt_high: int,
     ) -> None:
         """
-        Class for a cube in the airspace grid. The cube is defined by its id, the
-        minimum and maximum latitude, longitude and altitude.
+        Class for a cube that is used to define the  airspace grid. The cube is
+        initialised trough its id, the minimum and maximum latitude, longitude and
+        altitude.
+
         Parameters
         ----------
         id : str
-            id of the cube in the format 'range_altitude_grid_increasing_number'
+            id of the cube
         lat_min : float
             minimum latitude of the cube
         lat_max : float
@@ -1263,6 +1292,8 @@ class cube:
         alt_high : int
             higher altitude bound of the cube
         """
+
+        # initialise cube
         self.id = id
         self.lat_min = lat_min
         self.lat_max = lat_max
@@ -1272,19 +1303,20 @@ class cube:
         self.alt_high = alt_high
         self.lat_cen = (self.lat_min + self.lat_max) / 2
         self.lon_cen = (self.lon_min + self.lon_max) / 2
-        # self.alt_cen = (self.alt_low + self.alt_high) / 2
 
     def visualise(self) -> None:
         """
-        Visualises the cube. The location of the cube is shown on a map and its upper
-        and lower altitude bounds (vertical range) are printed out.
+        Visualises the cube instance. The location of the cube is shown on a map and its
+        upper and lower altitude bounds (vertical range) are printed out.
         """
-        # Plot grid
+        # Plot location of cube on map
         print("Location:")
         print("-----------------------------")
         fig = go.Figure(go.Scattermapbox())
         fig.update_layout(
-            mapbox_style="carto-positron",
+            mapbox_style="mapbox://styles/jakrum/clgqc6e8u00it01qzgtb4gg1z",
+            mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
+            "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
             height=800,
             width=800,
@@ -1319,7 +1351,7 @@ class cube:
         )
         fig.show()
 
-        # Print vertical ranges
+        # Print vertical range
         print("Vertical range:")
         print("-----------------------------")
         print(f"{self.alt_low}ft - {self.alt_high}ft")
