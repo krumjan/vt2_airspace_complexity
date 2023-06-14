@@ -93,7 +93,7 @@ class airspace:
         set to True, a sample of the trajectories is added to the plot. The amount of
         trajectories is defined by the parameter 'traj_num'. If the parameter 'reduced'
         is set to True, the plotted sample trajectories are the ones that are reduced to
-        the actual TMA extent. Otherwise, the sample trajectories span the entire
+        the actual airspace extent. Otherwise, the sample trajectories span the entire
         rectangular download-boundary. To plot a sample of non-reduced trajectories, a
         prerequisite is that the function 'data_fetch' has been executed before. To plot
         a sample of reduced trajectories, the function 'data_preprocess' additionally
@@ -109,8 +109,8 @@ class airspace:
             default 100
         reduced : bool, optional
             If set to True, the plot will include sample trajectories that are reduced
-            to the acutal TMA extent and otherwise sample trajectories that span the
-            entire rectangular donwload-boundary, by default True
+            to the acutal airspace extent and otherwise sample trajectories that span
+            the entire rectangular donwload-boundary, by default True
 
         Returns
         -------
@@ -274,7 +274,7 @@ class airspace:
             f"{home_path}/data/{self.id}/03_preprocessed/preprocessed_all_red.parquet"
         )
 
-        # If file does not exist, crop data to tma extent
+        # If file does not exist, crop data to airspace extent
         if check_file.is_file() is False:
             trajs = Traffic.from_file(
                 f"{home_path}/data/{self.id}/"
@@ -321,7 +321,7 @@ class airspace:
             # Load trajectory data
             trajs = Traffic.from_file(
                 f"{home_path}/data/{self.id}/"
-                "03_preprocessed/preprocessed_all_tma.parquet"
+                "03_preprocessed/preprocessed_all_red.parquet"
             )
             # Aggregate data by flight_id, keeping the minimum and maximum timestamp
             # which correspond to the airspace entry and exit time of the flight
@@ -826,7 +826,7 @@ class airspace:
 
         # Load trajectory data and generate flight id list and dataframe
         trajs_low = Traffic.from_file(
-            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_tma_low.parquet"
+            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_red_low.parquet"
         )
         ids = trajs_low.flight_ids
         trajs_low_data = trajs_low.data
