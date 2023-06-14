@@ -20,8 +20,7 @@ import traffic
 from traffic.core import Traffic
 
 from utils import adsb as util_adsb
-from utils import geo as util_geo
-from utils import general as util_general
+from utils import other as util_other
 from utils import viz as viz
 
 
@@ -137,7 +136,7 @@ class airspace:
         # When 'traj_sample' is True, add a sample of trajectories to the plot
         if traj_sample:
             # Define home path and import data
-            home_path = util_general.get_project_root()
+            home_path = util_other.get_project_root()
             # Load either reduced or non-reduced trajectories depending on the "reduced"
             # parameter
             if reduced:
@@ -199,7 +198,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Parallel data fetching and saving of daily chunks
         print("Fetching data...")
@@ -238,7 +237,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Preprocess data in monthly chunks
         print("Preprocessing data in monthly chuks...")
@@ -311,7 +310,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Check if file already exists
         check_file = Path(
@@ -412,7 +411,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
@@ -448,7 +447,7 @@ class airspace:
             heatmpa-like plot showing the hours classified as low traffic hours
         """
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
@@ -485,7 +484,7 @@ class airspace:
             Plotly figure object containing the four multiple boxplots
         """
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
@@ -520,7 +519,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
@@ -558,7 +557,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Only do the steps if the required file does not exist yet
         if not os.path.exists(
@@ -664,10 +663,10 @@ class airspace:
         lat = self.lat_max
         lon = self.lon_min
         while lat > self.lat_min:
-            lat = util_geo.new_pos_dist((lat, lon), dim, 180)[0]
+            lat = util_other.new_pos_dist((lat, lon), dim, 180)[0]
             lats.append(lat)
         while lon < self.lon_max:
-            lon = util_geo.new_pos_dist((lat, lon), dim, 90)[1]
+            lon = util_other.new_pos_dist((lat, lon), dim, 90)[1]
             lons.append(lon)
         # Iterate trough the rectangular grid and check if the center of each cell is
         # within the airspace boundaries. If so, add the cell to the grid attribute
@@ -823,7 +822,7 @@ class airspace:
         """
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Load trajectory data and generate flight id list and dataframe
         trajs_low = Traffic.from_file(
@@ -921,7 +920,7 @@ class airspace:
         ) = args
 
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Generate set of simulation trajectories
         df_traf = self.simulation_generate_trajs(duration, interval)
@@ -1073,7 +1072,7 @@ class airspace:
 
         # Generate aggregated results for all simulation runs
         # Define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # 1. List of all total counts
         # Get list of all total run counts
@@ -1153,7 +1152,7 @@ class airspace:
         """
 
         # define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Read aggregated list of total counts from pickle file
         file_path = (
@@ -1164,7 +1163,7 @@ class airspace:
             total_occurences_list = pickle.load(f)
 
         # Return histogram plot
-        return viz.plot_occurence_histogram(
+        return viz.occurence_histogram(
             occ_list=total_occurences_list, ci=ci
         )
 
@@ -1199,7 +1198,7 @@ class airspace:
         """
 
         # define home path
-        home_path = util_general.get_project_root()
+        home_path = util_other.get_project_root()
 
         # Read aggregated dictionary of cube counts from pickle file
         file_path = (
@@ -1256,7 +1255,7 @@ class airspace:
             df = df[df.alt_min == alt_low]
 
         # Return heatmap plot
-        return viz.plot_occurence_heatmap(df, self.shape)
+        return viz.occurence_heatmap(df, self.shape)
 
 
 class cube:

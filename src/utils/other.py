@@ -1,12 +1,26 @@
 import math
 from typing import Tuple
+from pathlib import Path
+
+
+def get_project_root() -> str:
+    """
+    Returns the root path of the project.
+
+    Returns
+    -------
+    str
+        root path of the project
+    """
+
+    return str(Path(__file__).parent.parent.parent)
 
 
 def new_pos_dist(
-    pos: Tuple[float, float], distance: float, direction: float
+    pos: Tuple[float, float], distance: float, bearing: float
 ) -> Tuple[float, float]:
     """
-    Calculates the new position given an initial position, a distance and a direction.
+    Calculates the new position given an initial position, a distance and a bearing in °
     Parameters
     ----------
     pos : Tuple[float, float]
@@ -14,12 +28,13 @@ def new_pos_dist(
     distance : float
         Distance in nautical miles
     direction : float
-        Direction/bearing in degrees
+        Bearing in degrees
     Returns
     -------
     Tuple[float, float]
         New position (latitude, longitude)
     """
+
     # Convert latitude and longitude to radians
     lat = pos[0]
     lon = pos[1]
@@ -30,7 +45,7 @@ def new_pos_dist(
     dist_meters = distance * 1852.0
 
     # Convert direction to radians
-    dir_rad = math.radians(direction)
+    dir_rad = math.radians(bearing)
 
     # Calculate new latitude and longitude
     new_lat_rad = math.asin(

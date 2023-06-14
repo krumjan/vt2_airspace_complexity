@@ -140,7 +140,7 @@ def combine_adsb(path_raw: str, path_combined: str) -> None:
     path_combined : str
         Folder path where the combined parquet file will be stored
     """
-    
+
     # create combined folder if it does not exist
     if os.path.isdir(path_combined) is False:
         os.mkdir(path_combined)
