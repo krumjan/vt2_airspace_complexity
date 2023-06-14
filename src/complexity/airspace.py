@@ -429,8 +429,9 @@ class airspace:
         Generates a heatmap-like plot showing the hours classified as low traffic hours.
         Prerequisite to run this function is the existence of a dataframe containing
         hourly aggregated which is created by the function 'get_hourly_df'. The
-        threshold for the classification of low traffic hours can be set by the user but
-        is by default set to 40% of the maximum traffic volume.
+        threshold for the classification of low traffic hours can be set trough the
+        parameters reference_type and reference_value. The default setting is to
+        classify all hours with less than 40% of the maximum traffic volume as low hours
 
         Parameters
         ----------
@@ -449,12 +450,12 @@ class airspace:
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load pandas dataframe from parquet file
+        # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
 
-        # Create plot and return it
+        # Return heatmap-like plot of low hours
         return viz.heatmap_low_hour(hourly_df, reference_type, reference_value)
 
     def hourly_boxplots(
@@ -464,10 +465,10 @@ class airspace:
         Generates a plot containing four multiple boxplots showing the distribution of
         hourly traffic volume grouped by hour of day, day of week, day of month and
         month. In each plot a horizontal line is drawn to indicate the threshold for
-        low-traffic hours. Prerequisite to run this function is the existence of a
-        dataframe containing hourly aggregated which is created by the function
-        'get_hourly_df'. The threshold for the classification of low traffic hours can
-        be set by the user but is by default set to 40% of the maximum traffic volume.
+        low-traffic hours. The threshold for the classification of low traffic hours can
+        be set trough the parameters reference_type and reference_value. The default
+        setting is to classify all hours with less than 40% of the maximum traffic
+        volume as low hours
 
         Parameters
         ----------
@@ -486,30 +487,30 @@ class airspace:
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load pandas dataframe from parquet file
+        # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
 
-        # Create plot and return it
+        # Return collection of multiple boxplots as a figure
         return viz.hourly_boxplots(hourly_df, reference_type, reference_value)
 
     def hourly_cdf(
         self, reference_type: str = "max_perc", reference_value: float = 0.4
     ) -> plotly.graph_objs._figure.Figure:
         """
-        returns a cumulative distribution plot of the hourly entry counts of the
-        airspace instance. The function returns a plotly figure. The threshold can be
+        Returns a cumulative distribution function plot for the hourly entry counts of
+        the airspace with additional lines showing a set threshold. The threshold can be
         set using the reference type and value and is also indicated in the plot.
 
         Parameters
         ----------
         reference_type : str
             Reference type to use for the threshold. Can be 'mean', 'median', 'quantile'
-            or 'max_perc'.
+            or 'max_perc', by default 'max_perc'
         reference_value : float, optional
             For type quantile the quantile to use and for type max_perc the percentage
-            of the max observed hourly count to use as threshold, by default 0.5
+            of the max observed hourly count to use as threshold, by default 0.4
 
         Returns
         -------
@@ -521,12 +522,12 @@ class airspace:
         # Define home path
         home_path = util_general.get_project_root()
 
-        # Load pandas dataframe from parquet file
+        # Load hourly dataframe from parquet file
         hourly_df = pd.read_parquet(
             f"{home_path}/data/{self.id}/04_hourly/hourly_df.parquet"
         )
 
-        # Create heatmap and return it
+        # Return cumulative distribution function plot
         return viz.cumulative_distribution(hourly_df, "max_perc", 0.4)
 
     def reduce_low_traffic(self, reference_type: str, reference_value: float):
