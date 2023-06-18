@@ -62,7 +62,7 @@ class airspace:
             self.lon_min = volume.shape.bounds[0]
             self.lat_cen = volume.shape.centroid.y
             self.lon_cen = volume.shape.centroid.x
-            self.alt_min = int(volume.elements[0].lower * 100)
+            self.alt_min = int(max(volume.elements[0].lower * 100, 8500))
             self.alt_max = int(min(volume.elements[-1].upper * 100, 45000))
 
         # If volume is a tuple of a shapely polygon and two floats defining the upper
@@ -1163,9 +1163,7 @@ class airspace:
             total_occurences_list = pickle.load(f)
 
         # Return histogram plot
-        return viz.occurence_histogram(
-            occ_list=total_occurences_list, ci=ci
-        )
+        return viz.occurence_histogram(occ_list=total_occurences_list, ci=ci)
 
     def simulation_plot_monte_carlo_heatmap(
         self,

@@ -199,7 +199,6 @@ def preprocess_adsb(
         check_file = Path(f"{path_save}/preprocessed_{year}_{month}.parquet")
         if check_file.is_file() is False:
             # load data
-            print(file)
             trajs = Traffic.from_file(file)
             # preprocess data
             trajs_proc = (
