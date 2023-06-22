@@ -797,7 +797,7 @@ class airspace:
         self,
         duration: int = 24,
         interval: int = 60,
-        start_time: str = "2000-01-01 00:00:00",
+        start_time: str = "2019-01-01 00:00:00",
     ) -> pd.DataFrame:
         """
         Simulates a single run of the airspace simulation and returns a dataframe
@@ -826,7 +826,7 @@ class airspace:
 
         # Load trajectory data and generate flight id list and dataframe
         trajs_low = Traffic.from_file(
-            f"{home_path}/data/LSAGUAC/05_low_traffic/trajs_red_low.parquet"
+            f"{home_path}/data/{self.id}/05_low_traffic/trajs_red_low.parquet"
         )
         ids = trajs_low.flight_ids
         trajs_low_data = trajs_low.data
@@ -954,32 +954,23 @@ class airspace:
                 .reset_index()
                 .sort_values(by="min")
             )
+            in_out = in_out.rename({"min": "t_in", "max": "t_out"}, axis=1)
 
-            # Create a dictionary containing the exit timestamp as key and a list of
-            # the corresponding flight IDs exiting at that timestamp as value
-            flight_dict = {
-                flight.max: [flight.flight_id]
-                for flight in in_out.itertuples()
-            }
+            # drop flights with only one datapoint in the cell
+            in_out = in_out[in_out.t_out != in_out.t_in]
 
-            # Set counter for cube to zero
+            # Iterate over flights in the cell and check for overlaps
             count = 0
-            # Iterate over flights and find overlaps of time spent in the cube
-            for flight in in_out.itertuples():
-                matches = []
-                # Using the dict, find flights that that are within the cube at the same
-                # time
-                for other_flight in flight_dict.get(flight.min, []):
-                    if (
-                        flight.max
-                        > in_out.loc[
-                            in_out["flight_id"] == other_flight, "min"
-                        ].values[0]
-                    ):
-                        # for each flight in the cube at the same time, append to list
-                        # and increase counter
-                        matches.append(other_flight)
-                        count += 1
+            for i in range(len(in_out)):
+                flight = in_out.iloc[i]
+                t_out = flight.t_out
+
+                # matches = []
+                for j in range(i + 1, len(in_out)):
+                    if in_out.iloc[j].t_in > t_out:
+                        break
+                    # matches.append(in_out.iloc[j].flight_id)
+                    count += 1
 
             # Update results (count for cube and total count)
             results[cube.id] = count
