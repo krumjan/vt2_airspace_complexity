@@ -23,6 +23,10 @@ from utils import adsb as util_adsb
 from utils import other as util_other
 from utils import viz as viz
 
+# initialise semaphore limiting number of parallel executions of 
+# simulation_generate_trajs() during multiprocessing
+semaphore = mp.Semaphore(5)
+
 
 class airspace:
     def __init__(
@@ -125,12 +129,12 @@ class airspace:
             mapbox_accesstoken="pk.eyJ1IjoiamFrcnVtIiwiYSI6ImNsZ3FjM3BiMzA3dzYzZHMzNHR"
             "kZnFtb3EifQ.ydDFlmylEcRCkRLWXqL1Cg",
             showlegend=False,
-            height=400,
-            width=800,
+            height=1000,
+            width=1300,
             margin={"l": 0, "b": 0, "t": 0, "r": 0},
             mapbox_center_lat=self.lat_cen,
             mapbox_center_lon=self.lon_cen,
-            mapbox_zoom=7,
+            mapbox_zoom=6.6,
         )
 
         # When 'traj_sample' is True, add a sample of trajectories to the plot
@@ -142,7 +146,7 @@ class airspace:
             if reduced:
                 trajs = Traffic.from_file(
                     f"{home_path}/data/{self.id}/"
-                    "03_preprocessed/preprocessed_all_tma.parquet"
+                    "03_preprocessed/preprocessed_all_red.parquet"
                 )
             else:
                 trajs = Traffic.from_file(
@@ -641,9 +645,9 @@ class airspace:
                 f"{home_path}/data/{self.id}/05_low_traffic/trajs_red_low.parquet"
             )
 
-    def cells_generate(self, dim: int = 5, alt_diff: int = 1000) -> None:
+    def cubes_generate(self, dim: int = 5, alt_diff: int = 1000) -> None:
         """
-        Generates a threedimensional grid of cells for the airspace. The cells are saved
+        Generates a threedimensional grid of cubes for the airspace. The cubes are saved
         as a list of cube objects in the 'grid' attribute of the airspace instance.
 
         Parameters
@@ -651,7 +655,7 @@ class airspace:
         dim : int, optional
             horizontal cell size [dim x dim] in nautical miles, by default 5
         alt_diff : int, optional
-            height of the cells in feet, by default 1000
+            height of the cubes in feet, by default 1000
         """
 
         # Generate horizontal grid
@@ -722,12 +726,12 @@ class airspace:
                     )
                 )
 
-    def cells_visualise(self) -> None:
+    def cubes_visualise(self) -> None:
         """
-        Visualises the cells comprising the airspace grid. The horizontal cells are
+        Visualises the cubes comprising the airspace grid. The horizontal cubes are
         displayed as rectangles on a map, the vertical intervals are displayed as
         text below the map. The function requires the attribute 'grid' which is created
-        by the function cells_generate. If it does not exist, an error is raised.
+        by the function cubes_generate. If it does not exist, an error is raised.
 
         Raises
         ------
@@ -739,7 +743,7 @@ class airspace:
         if not hasattr(self, "grid"):
             raise ValueError(
                 "Grid does not exist. Please execute function "
-                "generate_cells() first."
+                "generate_cubes() first."
             )
 
         # Plot horizontal grid as rectangles on a map
@@ -922,93 +926,103 @@ class airspace:
         # Define home path
         home_path = util_other.get_project_root()
 
-        # Generate set of simulation trajectories
-        df_traf = self.simulation_generate_trajs(duration, interval)
-
-        # If grid for airspace does not exist, generate it
-        if not hasattr(self, "grid"):
-            self.cells_generate(dim=5, alt_diff=1000)
-
-        # Initialise results dictionary and counter. in the dictionary the amount of
-        # occurences of each cell is stored while the counter is used to keep track of
-        # the total amount of occurences of the simulation.
-        results = {}
-        total_count = 0
-
-        # Iterate over cubes of airspace grid
-        for cube in self.cubes:
-            # Subset dataframe to only include flights within the cube
-            subset = df_traf.loc[
-                (df_traf["latitude"] >= cube.lat_min)
-                & (df_traf["latitude"] <= cube.lat_max)
-                & (df_traf["longitude"] >= cube.lon_min)
-                & (df_traf["longitude"] <= cube.lon_max)
-                & (df_traf["altitude"] >= cube.alt_low)
-                & (df_traf["altitude"] <= cube.alt_high)
-            ]
-
-            # Group flights by flight ID and find entry and exit timestamps
-            in_out = (
-                subset.groupby("flight_id")["timestamp"]
-                .agg(["min", "max"])
-                .reset_index()
-                .sort_values(by="min")
-            )
-            in_out = in_out.rename({"min": "t_in", "max": "t_out"}, axis=1)
-
-            # drop flights with only one datapoint in the cell
-            in_out = in_out[in_out.t_out != in_out.t_in]
-
-            # Iterate over flights in the cell and check for overlaps
-            count = 0
-            for i in range(len(in_out)):
-                flight = in_out.iloc[i]
-                t_out = flight.t_out
-
-                # matches = []
-                for j in range(i + 1, len(in_out)):
-                    if in_out.iloc[j].t_in > t_out:
-                        break
-                    # matches.append(in_out.iloc[j].flight_id)
-                    count += 1
-
-            # Update results (count for cube and total count)
-            results[cube.id] = count
-            total_count += count
-
-        # Save results for each cube of the gird packed in a dictionary. First check if
-        # directory exists, if not create it
         if not os.path.exists(
             f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
-            f"/runs_cube_counts/"
+            f"/runs_total_counts/{num}_total_count.pkl"
         ):
-            os.makedirs(
+            # Generate set of simulation trajectories, using a semaphore to prevent
+            # too many threads from accessing the same file at the same time and
+            # causing memory issues.
+            semaphore.acquire()
+            try:
+                df_traf = self.simulation_generate_trajs(duration, interval)
+            finally:
+                semaphore.release()
+
+            # If grid for airspace does not exist, generate it
+            if not hasattr(self, "grid"):
+                self.cubes_generate(dim=5, alt_diff=1000)
+
+            # Initialise results dictionary and counter. in the dictionary the amount of
+            # occurences of each cell is stored while the counter is used to keep track
+            # of the total amount of occurences of the simulation.
+            results = {}
+            total_count = 0
+
+            # Iterate over cubes of airspace grid
+            for cube in self.cubes:
+                # Subset dataframe to only include flights within the cube
+                subset = df_traf.loc[
+                    (df_traf["latitude"] >= cube.lat_min)
+                    & (df_traf["latitude"] <= cube.lat_max)
+                    & (df_traf["longitude"] >= cube.lon_min)
+                    & (df_traf["longitude"] <= cube.lon_max)
+                    & (df_traf["altitude"] >= cube.alt_low)
+                    & (df_traf["altitude"] <= cube.alt_high)
+                ]
+
+                # Group flights by flight ID and find entry and exit timestamps
+                in_out = (
+                    subset.groupby("flight_id")["timestamp"]
+                    .agg(["min", "max"])
+                    .reset_index()
+                    .sort_values(by="min")
+                )
+                in_out = in_out.rename({"min": "t_in", "max": "t_out"}, axis=1)
+
+                # drop flights with only one datapoint in the cell
+                in_out = in_out[in_out.t_out != in_out.t_in]
+
+                # Iterate over flights in the cell and check for overlaps
+                count = 0
+                for i in range(len(in_out)):
+                    flight = in_out.iloc[i]
+                    t_out = flight.t_out
+
+                    # matches = []
+                    for j in range(i + 1, len(in_out)):
+                        if in_out.iloc[j].t_in > t_out:
+                            break
+                        # matches.append(in_out.iloc[j].flight_id)
+                        count += 1
+
+                # Update results (count for cube and total count)
+                results[cube.id] = count
+                total_count += count
+
+            # Save results for each cube of the grid packed in a dictionary. First check
+            # if directory exists, if not create it
+            if not os.path.exists(
                 f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
                 f"/runs_cube_counts/"
-            )
-        with open(
-            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
-            f"/runs_cube_counts/{num}_results.pkl",
-            "wb",
-        ) as fp:
-            pickle.dump(results, fp)
+            ):
+                os.makedirs(
+                    f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
+                    f"/runs_cube_counts/"
+                )
+            with open(
+                f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
+                f"/runs_cube_counts/{num}_results.pkl",
+                "wb",
+            ) as fp:
+                pickle.dump(results, fp)
 
-        # Save the total count of occurences also as a pickle file. First check if
-        # directory exists, if not create it
-        if not os.path.exists(
-            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
-            f"/runs_total_counts/"
-        ):
-            os.makedirs(
+            # Save the total count of occurences also as a pickle file. First check if
+            # directory exists, if not create it
+            if not os.path.exists(
                 f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
                 f"/runs_total_counts/"
-            )
-        with open(
-            f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
-            f"/runs_total_counts/{num}_total_count.pkl",
-            "wb",
-        ) as fp:
-            pickle.dump(total_count, fp)
+            ):
+                os.makedirs(
+                    f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
+                    f"/runs_total_counts/"
+                )
+            with open(
+                f"{home_path}/data/{self.id}/06_monte_carlo/{duration}_{interval}"
+                f"/runs_total_counts/{num}_total_count.pkl",
+                "wb",
+            ) as fp:
+                pickle.dump(total_count, fp)
 
     def simulation_monte_carlo_run(
         self,
@@ -1016,6 +1030,7 @@ class airspace:
         interval: int,
         runs: int,
         max_process: int,
+        max_reads: int = 10,
         start_num: int = 0,
     ):
         """
@@ -1041,7 +1056,15 @@ class airspace:
         start_num : int, optional
             Id number of the first simulation run to be performed. Only relevant for the
             folder name, by default 0
+        max_reads : int, optional
+            Maximum number of parallel processes to be used for reading the reduced
+            traffic dataset, by default 10
         """
+
+        # Set max number of simultaneous generations of simulation data (parallel
+        # processes reading the reduced traffic dataset) due to memory constraints:
+        global semaphore
+        semaphore = mp.Semaphore(max_reads)
 
         # Parallelisation of the simulation runs
         with mp.Pool(max_process) as pool:
@@ -1062,6 +1085,7 @@ class airspace:
             )
 
         # Generate aggregated results for all simulation runs
+        print("Aggregating results...")
         # Define home path
         home_path = util_other.get_project_root()
 
@@ -1113,7 +1137,7 @@ class airspace:
         ) as fp:
             pickle.dump(aggregated_dict, fp)
 
-    def simulation_plot_monte_carlo_histogram(
+    def simulation_monte_carlo_plot_histogram(
         self, duration: int, interval: int, ci: float = 0.9
     ) -> matplotlib.figure.Figure:
         """
@@ -1156,11 +1180,12 @@ class airspace:
         # Return histogram plot
         return viz.occurence_histogram(occ_list=total_occurences_list, ci=ci)
 
-    def simulation_plot_monte_carlo_heatmap(
+    def simulation_monte_carlo_plot_map(
         self,
         duration: int,
         interval: int,
         alt_low: int = None,
+        zoom: int = 10,
     ) -> matplotlib.figure.Figure:
         """
         Generates a heatmap showing the number of occurences for each grid cell in the
@@ -1178,6 +1203,8 @@ class airspace:
             results to be plotted.
         alt_low : int
             lower bound of altitude layer to show in feet
+        zoom : int, optional
+            Zoom level of the map, by default 10
 
         Returns
         -------
@@ -1199,7 +1226,7 @@ class airspace:
 
         # If grid for airspace does not exist, generate it
         if not hasattr(self, "grid"):
-            self.cells_generate(dim=5, alt_diff=1000)
+            self.cubes_generate(dim=5, alt_diff=1000)
 
         # generate lists and put information about cube position and count in them
         lat_min = []
@@ -1244,7 +1271,7 @@ class airspace:
             df = df[df.alt_min == alt_low]
 
         # Return heatmap plot
-        return viz.occurence_heatmap(df, self.shape)
+        return viz.occurence_heatmap(df, self.shape, zoom=zoom)
 
 
 class cube:
