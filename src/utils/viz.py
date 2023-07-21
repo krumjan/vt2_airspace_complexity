@@ -206,7 +206,7 @@ def hourly_boxplots(
 
     # Generate figure with four subplots
     fig, axes = plt.subplots(2, 2)
-    fig.set_size_inches(1280 / 96, 720 / 96)
+    fig.set_size_inches(2000 / 96, 1200 / 96)
 
     # Plot the distribution ot the hourly aircraft count per hour of the day
     sns.boxplot(
@@ -412,7 +412,7 @@ def occurence_histogram(occ_list: list, ci: float) -> matplotlib.figure.Figure:
     # Create histogram plot
     ax = sns.histplot(data=occ_list, bins=100)
     fig = ax.get_figure()
-    fig.set_size_inches(10, 7)
+    fig.set_size_inches(18, 6)
 
     # Add labels
     ax.set_title(
@@ -424,9 +424,13 @@ def occurence_histogram(occ_list: list, ci: float) -> matplotlib.figure.Figure:
 
     # Compute mean with confidence interval
     mean = np.mean(occ_list)
-    lower_ci, upper_ci = stats.norm.interval(
-        ci, loc=np.mean(occ_list), scale=np.std(occ_list)
-    )
+    # lower_ci, upper_ci = stats.norm.interval(
+    #     ci, loc=np.mean(occ_list), scale=np.std(occ_list)
+    # )
+    # lower_ci = max(lower_ci, 0)
+    df = pd.DataFrame({"occurences": occ_list})
+    lower_ci = df["occurences"].quantile((1 - ci) / 2)
+    upper_ci = df["occurences"].quantile(1 - (1 - ci) / 2)
 
     # Plot lines for mean, lower and upper confidence intervals
     ax.axvline(mean, color="red", linestyle="dashed", linewidth=1)
@@ -464,6 +468,7 @@ def occurence_histogram(occ_list: list, ci: float) -> matplotlib.figure.Figure:
 def occurence_heatmap(
     df: pd.DataFrame,
     airspace: shapely.geometry.polygon.Polygon,
+    zoom: int = 10,
 ) -> matplotlib.figure.Figure:
     """
     Generates a heatmap showing the number of occurences for each grid cell in the
@@ -480,6 +485,8 @@ def occurence_heatmap(
     airspace : shapely.geometry.polygon.Polygon
         Shapely polygon representing the airspace for which the heatmap should be
         generated.
+    zoom : int, optional
+        Zoom level to use for the heatmap, by default 10
 
     Returns
     -------
@@ -498,11 +505,11 @@ def occurence_heatmap(
         ),
         showlegend=False,
         height=1000,
-        width=1000,
+        width=1300,
         margin={"l": 0, "b": 0, "t": 0, "r": 0},
         mapbox_center_lat=airspace.centroid.xy[1][0],
         mapbox_center_lon=airspace.centroid.xy[0][0],
-        mapbox_zoom=7,
+        mapbox_zoom=zoom,
     )
 
     # Define colorscale
@@ -531,7 +538,7 @@ def occurence_heatmap(
                 line=dict(width=2, color="black"),
                 fill="toself",
                 fillcolor=colorscale(row[1][6]),
-                text=f"count: {row[1][6]}",
+                # text=f"count: {row[1][6]}",
                 opacity=0.2,
                 name="Rectangle",
             )
@@ -590,4 +597,5 @@ def occurence_heatmap(
     fig.update_yaxes(showticklabels=False)
 
     # Return plot
+    # fig.write_image("figure.png") # Alternative to directly save the figure
     return fig
